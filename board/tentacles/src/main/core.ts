@@ -30,6 +30,7 @@ import type {
   ReadFileResult,
   OpenPathResult,
   StatusResult,
+  Target,
 } from "../shared/ipc-contract";
 
 export type { NotificationSetting } from "../shared/ipc-contract";
@@ -752,6 +753,7 @@ export function computeNotifications(
 export interface Settings {
   root?: string;
   notifications?: NotificationSetting;
+  targets?: Target[];
 }
 
 // Normalise any persisted/incoming value to a valid tri-state, defaulting to
@@ -771,6 +773,8 @@ export function parseSettings(text: string): Settings {
       if (notifications === "silent" || notifications === "muted" || notifications === "enabled") {
         out.notifications = notifications;
       }
+      const targets = parseTargets((o as { targets?: unknown }).targets);
+      if (targets.length) out.targets = targets;
       return out;
     }
   } catch {
@@ -899,6 +903,249 @@ export async function openWorktree(
   return error ? { ok: false, error } : { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Setup tool: install planner + doctor checker (pure), the bundle-root resolver,
+// and the thin real fs/exec boundary. The planner/checker return DATA (labelled
+// steps/checks); wiring.ts iterates them against an injected executor/probe so
+// the decision logic is unit-testable without touching disk — the same seam
+// `archiveChange` uses via its injectable `archiver`.
+// ---------------------------------------------------------------------------
+
+export const KNOWN_TARGETS: Target[] = ["claude", "kiro", "kiro-crew"];
+
+// The workflows the atdd-driven profile must expose (written by Install into the
+// global OpenSpec config AND verified in full by Doctor). Matches the
+// openspec-setup skill's canonical list.
+export const OPENSPEC_WORKFLOWS: string[] = [
+  "propose", "explore", "apply", "update", "sync", "archive",
+  "new", "continue", "ff", "verify", "bulk-archive", "onboard",
+];
+
+// The canonical skills the atdd-driven workflow depends on — copied by Install
+// and verified BY NAME by Doctor, so a pre-existing but empty ~/.kiro/skills no
+// longer passes. (Ancillary tentacles-* skills also ship but are not workflow
+// prerequisites, so they are not required here.)
+export const REQUIRED_SKILLS: string[] = [
+  "atdd", "openspec-atdd", "openspec-setup", "code-review", "grill-with-docs", "codebase-design", "pr-writing",
+];
+
+// The four agent adapters every target must carry. Doctor checks each adapter
+// FILE exists (with the target's extension), not merely that the agents dir is
+// present.
+export const REQUIRED_ADAPTERS: string[] = ["engineer", "product-manager", "code-reviewer", "pr-writer"];
+
+// The complete opsx-* prompt set `openspec init` generates — one per workflow.
+// Doctor verifies the FULL set, so a single stray opsx-* file no longer passes.
+export const OPSX_PROMPTS: string[] = OPENSPEC_WORKFLOWS.map((w) => `opsx-${w}.prompt.md`);
+
+// The agent-adapter filenames for a target: JSON for Kiro/Kiro Crew, Markdown
+// for Claude.
+export function adapterFiles(target: Target): string[] {
+  const ext = target === "claude" ? ".md" : ".json";
+  return REQUIRED_ADAPTERS.map((a) => a + ext);
+}
+
+// OpenSpec's user (global) schema directory — where a globally-installed schema
+// must live to RESOLVE. Mirrors the CLI's own resolver: $XDG_DATA_HOME/openspec
+// when set, else ~/.local/share/openspec (NOT ~/.config/openspec, which is the
+// config dir the CLI never reads schemas from).
+export function userSchemasDir(home: string, env: NodeJS.ProcessEnv = process.env): string {
+  const xdg = env.XDG_DATA_HOME && env.XDG_DATA_HOME.trim() ? env.XDG_DATA_HOME : path.join(home, ".local", "share");
+  return path.join(xdg, "openspec", "schemas");
+}
+
+// Pure doctor-probe parsers (the probe boundary in wiring.ts shells out; these
+// decide pass/fail from the output, so they are unit-tested here).
+
+// Which required entries (workflows, skills, adapters, prompts) are absent from
+// the set actually present.
+export function missingEntries(have: string[], required: string[]): string[] {
+  return required.filter((r) => !have.includes(r));
+}
+
+// Which required workflows are absent from the configured set.
+export function missingWorkflows(have: string[], required: string[]): string[] {
+  return missingEntries(have, required);
+}
+
+// Whether `openspec schemas --json` (run from a project-free cwd, so only
+// user/package sources count) reports the named schema as resolvable.
+export function schemaResolves(jsonOutput: string, name: string): boolean {
+  try {
+    const list = JSON.parse(jsonOutput) as unknown;
+    if (!Array.isArray(list)) return false;
+    return list.some((s) => typeof s === "object" && s !== null && (s as { name?: unknown }).name === name);
+  } catch {
+    return false;
+  }
+}
+
+// `kirocrew doctor` prints "strict identity: ✅ routed" when healthy and a
+// negative such as "strict identity: not routed" otherwise, amongst other rows
+// (e.g. "kirocrew-core route: ✅ routed"). Isolate the `strict identity:` row so
+// a `routed` token on an unrelated row cannot make an unhealthy identity pass;
+// then require the positive state on that row AND reject its negative.
+export function strictIdentityRouted(output: string): boolean {
+  const row = output
+    .split(/\r?\n/)
+    .find((line) => /strict\s+identity\s*:/i.test(line));
+  if (row === undefined) return false;
+  return /\brouted\b/i.test(row) && !/\bnot\s+routed\b/i.test(row);
+}
+
+// `kirocrew config get agent.session_control` prints the boolean value.
+export function sessionControlEnabled(output: string): boolean {
+  return /^\s*true\s*$/i.test(output) || /:\s*true\b/i.test(output);
+}
+
+// Read a targets array from an untrusted settings body, keeping only known
+// target ids (mirrors how parseSettings already ignores a non-string root).
+export function parseTargets(value: unknown): Target[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is Target => typeof v === "string" && (KNOWN_TARGETS as string[]).includes(v));
+}
+
+// A planned install step: a labelled, typed operation. Data, not a call.
+export type InstallStep =
+  | { id: string; label: string; kind: "copy-dir"; from: string; to: string; dereference?: boolean }
+  | { id: string; label: string; kind: "copy-glob"; fromDir: string; prefix: string; to: string }
+  | { id: string; label: string; kind: "write-file"; to: string; contents: string }
+  | { id: string; label: string; kind: "run-command"; command: string; args: string[]; cwd?: string; requires?: string }
+  | { id: string; label: string; kind: "detect-tool"; command: string; hint: string };
+
+// A planned doctor check: a labelled probe. Data, not a call.
+export type DoctorCheck =
+  | { id: string; label: string; kind: "entries-present"; dir: string; required: string[] }
+  | { id: string; label: string; kind: "prompts-present"; dir: string; required: string[] }
+  | { id: string; label: string; kind: "schema-resolves"; name: string; cwd: string }
+  | { id: string; label: string; kind: "openspec-cli" }
+  | { id: string; label: string; kind: "openspec-profile"; configPath: string }
+  | { id: string; label: string; kind: "openspec-workflows"; configPath: string; required: string[] }
+  | { id: string; label: string; kind: "kirocrew-identity" }
+  | { id: string; label: string; kind: "kirocrew-session-control" };
+
+export interface PlanContext {
+  repoRoot: string;
+  home: string;
+}
+
+// Walk up from a starting directory to the openspec-sdd-configure-tool repo root
+// (the dir that holds skills/ + agents/ + openspec/schemas). Used so Install
+// copies from the local checkout the app runs from (grill D4). Injectable start
+// + exists for testing.
+export function resolveBundleRoot(
+  start: string = __dirname,
+  exists: (p: string) => boolean = (p) => fs.existsSync(p)
+): string | null {
+  let dir = start;
+  for (let i = 0; i < 12; i++) {
+    if (exists(path.join(dir, "skills")) && exists(path.join(dir, "openspec", "schemas"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+// Pure install planner. Returns the ordered, deduplicated step list for the
+// selected targets: each target's file copies, plus the shared OpenSpec global
+// slice, with Kiro Crew adding the host-wiring + restart steps on top of Kiro.
+// Steps are keyed by id and deduplicated so a multi-select install is idempotent.
+export function planInstall(targets: Target[], ctx: PlanContext): InstallStep[] {
+  const { repoRoot, home } = ctx;
+  const steps: InstallStep[] = [];
+
+  const stepsForTarget = (t: Target): InstallStep[] => {
+    switch (t) {
+      case "claude":
+        return [
+          { id: "claude-skills", label: "Copy skills → ~/.claude/skills", kind: "copy-dir", from: path.join(repoRoot, "skills"), to: path.join(home, ".claude", "skills") },
+          { id: "claude-agents", label: "Copy agent adapters → ~/.claude/agents", kind: "copy-dir", from: path.join(repoRoot, ".claude", "agents"), to: path.join(home, ".claude", "agents") },
+        ];
+      case "kiro":
+        return [
+          { id: "kiro-skills", label: "Copy skills → ~/.kiro/skills", kind: "copy-dir", from: path.join(repoRoot, "skills"), to: path.join(home, ".kiro", "skills") },
+          { id: "kiro-agents", label: "Copy agent adapters (dereferenced) → ~/.kiro/agents", kind: "copy-dir", from: path.join(repoRoot, ".kiro", "agents"), to: path.join(home, ".kiro", "agents"), dereference: true },
+          { id: "kiro-prompts-generate", label: "Generate opsx-* prompts (openspec init --tools kiro)", kind: "run-command", command: "openspec", args: ["init", "--tools", "kiro", "--profile", "custom", "--no-copilot-cloud"], cwd: repoRoot },
+          { id: "kiro-prompts", label: "Copy opsx-* prompts → ~/.kiro/prompts", kind: "copy-glob", fromDir: path.join(repoRoot, ".kiro", "prompts"), prefix: "opsx-", to: path.join(home, ".kiro", "prompts") },
+        ];
+      case "kiro-crew":
+        return [
+          ...stepsForTarget("kiro"),
+          { id: "crew-wiring", label: "Run setup-kiro-crew.sh (host wiring)", kind: "run-command", command: path.join(repoRoot, "scripts", "setup-kiro-crew.sh"), args: [], cwd: repoRoot, requires: "kirocrew" },
+          { id: "crew-restart", label: "Restart the Kiro Crew gateway", kind: "run-command", command: "kirocrew", args: ["restart"], requires: "kirocrew" },
+        ];
+    }
+  };
+
+  for (const t of KNOWN_TARGETS) if (targets.includes(t)) steps.push(...stepsForTarget(t));
+
+  // The OpenSpec global slice — shared by every target. Detect-only for the CLI
+  // (never an install step), plus the profile/workflows write and the schema.
+  if (targets.length > 0) {
+    steps.push(
+      { id: "openspec-cli", label: "Detect the OpenSpec CLI", kind: "detect-tool", command: "openspec", hint: "openspec not found — install it (e.g. npm i -g openspec) and re-run" },
+      {
+        id: "openspec-profile",
+        label: "Set OpenSpec profile → custom (with workflows)",
+        kind: "write-file",
+        to: path.join(home, ".config", "openspec", "config.json"),
+        contents: JSON.stringify({ profile: "custom", workflows: OPENSPEC_WORKFLOWS }, null, 2),
+      },
+      { id: "openspec-schema", label: "Install the atdd-driven schema", kind: "copy-dir", from: path.join(repoRoot, "openspec", "schemas", "atdd-driven"), to: path.join(userSchemasDir(home), "atdd-driven") }
+    );
+  }
+
+  // Deduplicate by id, preserving first occurrence (keeps a multi-select install
+  // idempotent — shared Kiro steps and the OpenSpec slice appear once).
+  const seen = new Set<string>();
+  return steps.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
+}
+
+// Pure doctor checker. Returns the ordered check list scoped to the selected
+// targets, plus the shared OpenSpec checks. Mirrors what planInstall lays down.
+export function planDoctorChecks(targets: Target[], ctx: { home: string }): DoctorCheck[] {
+  const { home } = ctx;
+  const checks: DoctorCheck[] = [];
+
+  const checksForTarget = (t: Target): DoctorCheck[] => {
+    switch (t) {
+      case "claude":
+        return [
+          { id: "claude-skills", label: "Claude skills present", kind: "entries-present", dir: path.join(home, ".claude", "skills"), required: REQUIRED_SKILLS },
+          { id: "claude-agents", label: "Claude agent adapters present", kind: "entries-present", dir: path.join(home, ".claude", "agents"), required: adapterFiles("claude") },
+        ];
+      case "kiro":
+        return [
+          { id: "kiro-skills", label: "Kiro skills present", kind: "entries-present", dir: path.join(home, ".kiro", "skills"), required: REQUIRED_SKILLS },
+          { id: "kiro-agents", label: "Kiro agent adapters present", kind: "entries-present", dir: path.join(home, ".kiro", "agents"), required: adapterFiles("kiro") },
+          { id: "kiro-prompts", label: "opsx-* prompts present", kind: "prompts-present", dir: path.join(home, ".kiro", "prompts"), required: OPSX_PROMPTS },
+        ];
+      case "kiro-crew":
+        return [
+          ...checksForTarget("kiro"),
+          { id: "kirocrew-identity", label: "Kiro Crew strict identity routed", kind: "kirocrew-identity" },
+          { id: "kirocrew-session-control", label: "agent.session_control enabled", kind: "kirocrew-session-control" },
+        ];
+    }
+  };
+
+  for (const t of KNOWN_TARGETS) if (targets.includes(t)) checks.push(...checksForTarget(t));
+
+  if (targets.length > 0) {
+    const configPath = path.join(home, ".config", "openspec", "config.json");
+    checks.push(
+      { id: "openspec-cli", label: "OpenSpec CLI present", kind: "openspec-cli" },
+      { id: "openspec-profile", label: "OpenSpec profile is custom", kind: "openspec-profile", configPath },
+      { id: "openspec-workflows", label: "OpenSpec workflows configured", kind: "openspec-workflows", configPath, required: OPENSPEC_WORKFLOWS },
+      { id: "openspec-schema", label: "atdd-driven schema resolves", kind: "schema-resolves", name: "atdd-driven", cwd: home }
+    );
+  }
+
+  const seen = new Set<string>();
+  return checks.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
+}
+
 export default {
   PHASES,
   PRUNE,
@@ -926,6 +1173,21 @@ export default {
   dirExists,
   validateRoot,
   resolveRoot,
+  parseTargets,
+  resolveBundleRoot,
+  planInstall,
+  planDoctorChecks,
+  OPENSPEC_WORKFLOWS,
+  REQUIRED_SKILLS,
+  REQUIRED_ADAPTERS,
+  OPSX_PROMPTS,
+  adapterFiles,
+  userSchemasDir,
+  missingEntries,
+  missingWorkflows,
+  schemaResolves,
+  strictIdentityRouted,
+  sessionControlEnabled,
   collect,
   getStatus,
   archiveChange,

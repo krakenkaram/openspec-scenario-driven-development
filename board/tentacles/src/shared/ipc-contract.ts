@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's named
+// Type-only IPC contract: the single source of truth for the board's eleven
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -98,13 +98,15 @@ export type DiffResult = { ok: true; files: DiffFile[] } | { ok: false; error: s
 export interface BoardSettings {
   root: string;
   notifications: NotificationSetting;
+  targets: Target[];
 }
 export interface SetSettingsArgs {
   root: string;
   notifications?: NotificationSetting;
+  targets?: Target[];
 }
 export type SetSettingsResult =
-  | { ok: true; root: string; notifications: NotificationSetting }
+  | { ok: true; root: string; notifications: NotificationSetting; targets: Target[] }
   | { ok: false; error: string };
 
 // How completion notifications are surfaced: a full banner with sound, a silent
@@ -121,6 +123,28 @@ export type ChooseDirectoryResult = { path: string | null };
 // swallowing it.
 export type OpenPathResult = { ok: true } | { ok: false; error: string };
 
+// A setup Target is an AI coding host the workflow can be configured for. Kiro
+// Crew is a superset of Kiro (see CONTEXT.md glossary).
+export type Target = "claude" | "kiro" | "kiro-crew";
+
+// One row of an Install run or a Doctor run: a labelled step/check with a
+// pass/fail and an optional one-line reason. Install and Doctor share this shape
+// so the renderer renders both with one visual language.
+export interface ResultRow {
+  id: string;
+  label: string;
+  ok: boolean;
+  reason?: string;
+}
+export interface InstallArgs {
+  targets: Target[];
+}
+export type InstallResult = { steps: ResultRow[] };
+export interface DoctorArgs {
+  targets: Target[];
+}
+export type DoctorResult = { checks: ResultRow[] };
+
 // Exact method → channel-name mapping: the single source of truth for the
 // boundary. Both the preload bridge and the main-process IPC registry are typed
 // against it, so a typo, a missing channel, OR a swap (mapping a method to a
@@ -135,6 +159,8 @@ export interface ChannelMap {
   setSettings: "board:setSettings";
   chooseDirectory: "board:chooseDirectory";
   openPath: "board:openPath";
+  install: "board:install";
+  doctor: "board:doctor";
 }
 
 export type Channel = ChannelMap[keyof ChannelMap];
@@ -162,4 +188,6 @@ export interface ElectronAPI {
   chooseDirectory(): Promise<ChooseDirectoryResult>;
   openPath(target: string): Promise<OpenPathResult>;
   onNotificationSound(handler: () => void): () => void;
+  install(payload: InstallArgs): Promise<InstallResult>;
+  doctor(payload: DoctorArgs): Promise<DoctorResult>;
 }

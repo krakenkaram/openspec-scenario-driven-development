@@ -11,8 +11,23 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { App, BrowserWindow, IpcMain, IpcMainInvokeEvent, Notification, WebPreferences } from "electron";
-import { computeNotifications, parseSettings, validateRoot, dirExists, parseNotificationSetting, resolveNotifications } from "./core";
-import type { Args, BoardNotification, NotificationSetting, NotifyState, Settings } from "./core";
+import {
+  computeNotifications,
+  parseSettings,
+  validateRoot,
+  dirExists,
+  parseNotificationSetting,
+  resolveNotifications,
+  parseTargets,
+  planInstall,
+  planDoctorChecks,
+  missingEntries,
+  missingWorkflows,
+  schemaResolves,
+  strictIdentityRouted,
+  sessionControlEnabled,
+} from "./core";
+import type { Args, BoardNotification, NotificationSetting, NotifyState, Settings, InstallStep, DoctorCheck } from "./core";
 import type {
   ArchiveArgs,
   ArchiveResult,
@@ -21,11 +36,17 @@ import type {
   ChannelMap,
   ChooseDirectoryResult,
   DiffResult,
-  ReadFileResult,
+  DoctorArgs,
+  DoctorResult,
+  InstallArgs,
+  InstallResult,
   OpenPathResult,
+  ReadFileResult,
+  ResultRow,
   SetSettingsArgs,
   SetSettingsResult,
   StatusResult,
+  Target,
 } from "../shared/ipc-contract";
 
 // IPC channel names. preload.ts hardcodes the same string literals (a sandboxed
@@ -41,6 +62,8 @@ export const IPC: ChannelMap = {
   setSettings: "board:setSettings",
   chooseDirectory: "board:chooseDirectory",
   openPath: "board:openPath",
+  install: "board:install",
+  doctor: "board:doctor",
 };
 
 // The subset of core the handlers depend on.
@@ -111,17 +134,33 @@ export function makeDirectoryChooser(showOpenDialog: ShowOpenDialog): ChooseDire
 // real shell; main.ts supplies the real shell.openPath.
 export type OpenPath = (target: string) => Promise<string>;
 
+// The privileged setup operations. The executor performs one install step (fs
+// copy / write / spawn), throwing on failure; the probe answers one doctor check
+// with a pass/fail + reason. Both are injected so the handlers' run-all-and-report
+// logic is tested with fakes and never touches the real ~/.kiro / ~/.claude.
+export type InstallExecutor = (step: InstallStep) => Promise<void>;
+export type DoctorProbe = (check: DoctorCheck) => Promise<{ ok: boolean; reason?: string }>;
+
+export interface SetupDeps {
+  repoRoot: string | null;
+  home: string;
+  exec: InstallExecutor;
+  probe: DoctorProbe;
+}
+
 // The privileged operations, each backed by core. `getArgs` is a getter
 // so the scan args are read fresh per call. `observe` (optional) is handed each
 // scan's changes so completion notifications can fire main-side. `settings`
-// (optional) backs the getSettings/setSettings channels.
+// (optional) backs the getSettings/setSettings channels. `setup` (optional)
+// backs the install/doctor channels.
 export function makeHandlers(
   core: BoardCore,
   getArgs: () => Args,
   observe?: (changes: Change[]) => void,
   settings?: SettingsDeps,
   chooseDirectory?: ChooseDirectory,
-  openPath?: OpenPath
+  openPath?: OpenPath,
+  setup?: SetupDeps
 ) {
   return {
     getStatus: async () => {
@@ -140,15 +179,57 @@ export function makeHandlers(
     getSettings: (): BoardSettings => ({
       root: settings ? settings.getRoot() : getArgs().root,
       notifications: settings ? resolveNotifications(settings.read()) : "enabled",
+      targets: settings ? parseTargets(settings.read().targets) : [],
     }),
     setSettings: (_event: IpcMainInvokeEvent, payload: SetSettingsArgs | undefined): SetSettingsResult => {
       if (!settings) return { ok: false, error: "settings unavailable" };
       const res = validateRoot(payload?.root ?? "", settings.isDir ?? dirExists, settings.home);
       if (!res.ok) return res;
       const notifications = parseNotificationSetting(payload?.notifications ?? settings.read().notifications);
-      settings.write({ root: res.root, notifications });
+      const targets = parseTargets(payload?.targets ?? settings.read().targets);
+      settings.write({ root: res.root, notifications, targets });
       settings.setRoot(res.root);
-      return { ok: true, root: res.root, notifications };
+      return { ok: true, root: res.root, notifications, targets };
+    },
+    install: async (_event: IpcMainInvokeEvent, payload: InstallArgs | undefined): Promise<InstallResult> => {
+      if (!setup) return { steps: [] };
+      if (setup.repoRoot == null) {
+        return {
+          steps: [
+            {
+              id: "bundle-root",
+              label: "Locate the setup bundle",
+              ok: false,
+              reason: "Could not resolve the openspec-sdd-configure-tool checkout the app is running from — nothing was installed.",
+            },
+          ],
+        };
+      }
+      const steps = planInstall(payload?.targets ?? [], { repoRoot: setup.repoRoot, home: setup.home });
+      const rows: ResultRow[] = [];
+      for (const step of steps) {
+        try {
+          await setup.exec(step);
+          rows.push({ id: step.id, label: step.label, ok: true });
+        } catch (e) {
+          rows.push({ id: step.id, label: step.label, ok: false, reason: reasonOf(e) });
+        }
+      }
+      return { steps: rows };
+    },
+    doctor: async (_event: IpcMainInvokeEvent, payload: DoctorArgs | undefined): Promise<DoctorResult> => {
+      if (!setup) return { checks: [] };
+      const checks = planDoctorChecks(payload?.targets ?? [], { home: setup.home });
+      const rows: ResultRow[] = [];
+      for (const check of checks) {
+        try {
+          const r = await setup.probe(check);
+          rows.push({ id: check.id, label: check.label, ok: r.ok, reason: r.reason });
+        } catch (e) {
+          rows.push({ id: check.id, label: check.label, ok: false, reason: reasonOf(e) });
+        }
+      }
+      return { checks: rows };
     },
     chooseDirectory: async (): Promise<ChooseDirectoryResult> => ({
       path: chooseDirectory ? await chooseDirectory() : null,
@@ -160,6 +241,11 @@ export function makeHandlers(
   };
 }
 
+function reasonOf(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg.slice(0, 300);
+}
+
 export function registerIpc(
   ipcMain: IpcMain,
   core: BoardCore,
@@ -167,9 +253,10 @@ export function registerIpc(
   observe?: (changes: Change[]) => void,
   settings?: SettingsDeps,
   chooseDirectory?: ChooseDirectory,
-  openPath?: OpenPath
+  openPath?: OpenPath,
+  setup?: SetupDeps
 ) {
-  const handlers = makeHandlers(core, getArgs, observe, settings, chooseDirectory, openPath);
+  const handlers = makeHandlers(core, getArgs, observe, settings, chooseDirectory, openPath, setup);
   ipcMain.handle(IPC.getStatus, handlers.getStatus);
   ipcMain.handle(IPC.readFile, handlers.readFile);
   ipcMain.handle(IPC.getDiff, handlers.getDiff);
@@ -179,6 +266,8 @@ export function registerIpc(
   ipcMain.handle(IPC.setSettings, handlers.setSettings);
   ipcMain.handle(IPC.chooseDirectory, handlers.chooseDirectory);
   ipcMain.handle(IPC.openPath, handlers.openPath);
+  ipcMain.handle(IPC.install, handlers.install);
+  ipcMain.handle(IPC.doctor, handlers.doctor);
   return handlers;
 }
 
@@ -292,6 +381,7 @@ export interface BootstrapDeps {
   settings?: SettingsDeps;
   chooseDirectory?: ChooseDirectory;
   openPath?: OpenPath;
+  setup?: SetupDeps;
 }
 
 // Ordered startup coordinator. Registers IPC handlers BEFORE any window can call
@@ -311,8 +401,9 @@ export async function bootstrap({
   settings,
   chooseDirectory,
   openPath,
+  setup,
 }: BootstrapDeps) {
-  registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath);
+  registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup);
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
   let started = false;
 
@@ -364,4 +455,129 @@ export function loginShellPath(): Promise<string | null> {
       resolve(String(stdout).trim());
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Setup boundary: the real fs/exec that performs an install step or answers a
+// doctor check. This is the only untested layer (like makeNativeNotify /
+// runArchive) — no decision logic lives here; the planner/checker in core decide
+// WHAT runs, these only DO it. All commands run via execFile with argv arrays
+// (no shell), and all writes land under $HOME — the sole exception being the
+// `openspec init` step, which generates the opsx-* prompts in the app's own
+// bundle checkout before they are copied under $HOME.
+// ---------------------------------------------------------------------------
+
+function run(command: string, args: string[], cwd?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { cwd, timeout: 120000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error((stderr || String(err)).slice(0, 300)));
+      resolve(String(stdout));
+    });
+  });
+}
+
+// Whether a command resolves on PATH, via `command -v` in the login shell (no
+// argv assumption about a --version flag). Used to gate a run-command step whose
+// underlying script is a silent no-op when its host CLI is absent (e.g.
+// setup-kiro-crew.sh exits 0 on a non-Kiro-Crew host), so the Install row
+// reports the missing prerequisite honestly instead of a false success.
+function toolOnPath(tool: string): Promise<boolean> {
+  const shell = process.env.SHELL || "/bin/sh";
+  return new Promise((resolve) => {
+    execFile(shell, ["-ilc", `command -v ${tool}`], { timeout: 5000 }, (err, stdout) => {
+      resolve(!err && String(stdout).trim().length > 0);
+    });
+  });
+}
+
+// Builds the real install executor. Throws on a step failure; the handler loop
+// converts a throw into a ❌ row and continues (run-all-and-report).
+export function makeInstallExecutor(): InstallExecutor {
+  return async (step: InstallStep) => {
+    switch (step.kind) {
+      case "copy-dir":
+        fs.mkdirSync(path.dirname(step.to), { recursive: true });
+        fs.cpSync(step.from, step.to, { recursive: true, dereference: !!step.dereference });
+        return;
+      case "copy-glob": {
+        if (!fs.existsSync(step.fromDir)) {
+          throw new Error(`${step.fromDir} not found — run \`openspec update\` to generate the ${step.prefix}* prompts first`);
+        }
+        const files = fs.readdirSync(step.fromDir).filter((f) => f.startsWith(step.prefix));
+        if (files.length === 0) {
+          throw new Error(`no ${step.prefix}* files in ${step.fromDir} — run \`openspec update\` to generate them first`);
+        }
+        fs.mkdirSync(step.to, { recursive: true });
+        for (const f of files) fs.cpSync(path.join(step.fromDir, f), path.join(step.to, f), { dereference: true });
+        return;
+      }
+      case "write-file":
+        fs.mkdirSync(path.dirname(step.to), { recursive: true });
+        fs.writeFileSync(step.to, step.contents);
+        return;
+      case "run-command":
+        if (step.requires && !(await toolOnPath(step.requires))) {
+          throw new Error(`${step.requires} not found on PATH — this step needs it; install it and re-run.`);
+        }
+        await run(step.command, step.args, step.cwd);
+        return;
+      case "detect-tool":
+        try {
+          await run(step.command, ["--version"]);
+        } catch {
+          throw new Error(step.hint);
+        }
+        return;
+    }
+  };
+}
+
+// Builds the real doctor probe. Never throws — a failing check is a normal
+// { ok: false, reason } answer, not an exception.
+export function makeDoctorProbe(): DoctorProbe {
+  return async (check: DoctorCheck) => {
+    try {
+      switch (check.kind) {
+        case "entries-present": {
+          const present = fs.existsSync(check.dir) && fs.statSync(check.dir).isDirectory() ? fs.readdirSync(check.dir) : [];
+          const missing = missingEntries(present, check.required);
+          return missing.length === 0 ? { ok: true } : { ok: false, reason: `missing in ${check.dir}: ${missing.join(", ")}` };
+        }
+        case "prompts-present": {
+          const present = fs.existsSync(check.dir) ? fs.readdirSync(check.dir) : [];
+          const missing = missingEntries(present, check.required);
+          return missing.length === 0 ? { ok: true } : { ok: false, reason: `missing opsx-* prompts in ${check.dir}: ${missing.join(", ")}` };
+        }
+        case "schema-resolves": {
+          const out = await run("openspec", ["schemas", "--json"], check.cwd);
+          return schemaResolves(out, check.name) ? { ok: true } : { ok: false, reason: `schema '${check.name}' does not resolve` };
+        }
+        case "openspec-cli":
+          await run("openspec", ["--version"]);
+          return { ok: true };
+        case "openspec-profile": {
+          const text = fs.readFileSync(check.configPath, "utf8");
+          const ok = (JSON.parse(text) as { profile?: string }).profile === "custom";
+          return ok ? { ok: true } : { ok: false, reason: "OpenSpec profile is not 'custom'" };
+        }
+        case "openspec-workflows": {
+          const text = fs.readFileSync(check.configPath, "utf8");
+          const wf = (JSON.parse(text) as { workflows?: unknown }).workflows;
+          const have = Array.isArray(wf) ? (wf as unknown[]).filter((w): w is string => typeof w === "string") : [];
+          const missing = missingWorkflows(have, check.required);
+          return missing.length === 0 ? { ok: true } : { ok: false, reason: `missing workflows: ${missing.join(", ")}` };
+        }
+        case "kirocrew-identity": {
+          const out = await run("kirocrew", ["doctor"]);
+          return strictIdentityRouted(out) ? { ok: true } : { ok: false, reason: "kirocrew strict identity not routed" };
+        }
+        case "kirocrew-session-control": {
+          const out = await run("kirocrew", ["config", "get", "agent.session_control"]);
+          return sessionControlEnabled(out) ? { ok: true } : { ok: false, reason: "agent.session_control is not true" };
+        }
+      }
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message.slice(0, 300) : String(e) };
+    }
+  };
 }
