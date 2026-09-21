@@ -19,6 +19,7 @@ export interface Phase {
 
 export interface Pr {
   url: string;
+  number: number;
   state: string;
   reviewDecision: string;
   isDraft: boolean;

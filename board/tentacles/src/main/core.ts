@@ -55,6 +55,7 @@ interface RawStatus {
 }
 interface RawPr {
   url: string;
+  number?: number;
   state: string;
   reviewDecision?: string;
   isDraft?: boolean;
@@ -226,14 +227,18 @@ export function prForBranch(repo: string, branch: string | null): Promise<Pr | n
     if (!branch) return resolve(null);
     execFile(
       "gh",
-      ["pr", "list", "--head", branch, "--state", "all", "--json", "url,state,reviewDecision,isDraft", "--limit", "1"],
+      ["pr", "list", "--head", branch, "--state", "all", "--json", "url,number,state,reviewDecision,isDraft", "--limit", "1"],
       { cwd: repo, timeout: 8000 },
       (err, stdout) => {
         if (err || !stdout) return resolve(null);
         try {
           const arr = JSON.parse(String(stdout)) as RawPr[];
           const p = arr[0];
-          resolve(p ? { url: p.url, state: p.state, reviewDecision: p.reviewDecision || "", isDraft: !!p.isDraft } : null);
+          resolve(
+            p
+              ? { url: p.url, number: p.number ?? 0, state: p.state, reviewDecision: p.reviewDecision || "", isDraft: !!p.isDraft }
+              : null
+          );
         } catch {
           resolve(null);
         }

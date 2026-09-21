@@ -207,7 +207,7 @@ describe("the renderer renders the board state", () => {
       complete: true,
       review: "passed",
       planningComplete: true,
-      pr: { url: "https://github.com/o/r/pull/9", state: "MERGED", reviewDecision: "APPROVED", isDraft: false },
+      pr: { url: "https://github.com/o/r/pull/9", number: 9, state: "MERGED", reviewDecision: "APPROVED", isDraft: false },
     });
     const noPr = makeChange({ change: "nopr-change", repo: "repo-a", repoPath: "/Code/repo-a" });
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([merged, noPr])) });
@@ -216,13 +216,57 @@ describe("the renderer renders the board state", () => {
     await screen.findByText("merged-change");
 
     // approved appears only on the review node (once), not duplicated on done
-    expect(screen.getAllByText("✓ approved")).toHaveLength(1);
+    expect(screen.getAllByText("✓ Agent Approved")).toHaveLength(1);
 
-    const prLink = screen.getByRole("link");
+    const prLink = screen.getByRole("link", { name: /PR ↗/ });
     expect(prLink).toHaveAttribute("href", "https://github.com/o/r/pull/9");
     expect(within(prLink).getByText("PR ↗ ✓ merged")).toBeInTheDocument();
 
     // a change with no PR shows a "no PR" done node
     expect(screen.getByText("· no PR")).toBeInTheDocument();
+  });
+
+  it("marks the apply node clickable (pointer) whenever it opens an artifact, even while applying", async () => {
+    const c = makeChange({
+      change: "apply-clickable",
+      planningComplete: true,
+      applying: true,
+      apply: { source: "tasks.md", total: 4, done: 1, file: "/tasks.md" },
+    });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
+
+    render(<App />);
+    await screen.findByText("apply-clickable");
+
+    const applyNode = screen.getByText("apply").closest(".node");
+    expect(applyNode?.className).toContain("clickable");
+  });
+
+  it("renders a PR button labelled #<number> next to View in Finder that links to the PR", async () => {
+    const c = makeChange({
+      change: "pr-button-change",
+      repoPath: "/Code/repo-a",
+      pr: { url: "https://github.com/o/r/pull/42", number: 42, state: "OPEN", reviewDecision: "", isDraft: false },
+    });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
+
+    render(<App />);
+    await screen.findByText("pr-button-change");
+
+    const card = screen.getByText("pr-button-change").closest(".change") as HTMLElement;
+    const prBtn = within(card).getByRole("link", { name: /#42/ });
+    expect(prBtn).toHaveAttribute("href", "https://github.com/o/r/pull/42");
+    expect(prBtn.className).toContain("pr-btn");
+  });
+
+  it("shows no PR button on the card when the change has no PR", async () => {
+    const c = makeChange({ change: "no-pr-button", repoPath: "/Code/repo-a", pr: null });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
+
+    render(<App />);
+    await screen.findByText("no-pr-button");
+
+    const card = screen.getByText("no-pr-button").closest(".change") as HTMLElement;
+    expect(card.querySelector(".pr-btn")).toBeNull();
   });
 });
