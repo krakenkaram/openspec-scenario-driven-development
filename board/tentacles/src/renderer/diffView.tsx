@@ -12,6 +12,8 @@ function FileLines({ file }: { file: DiffFile }) {
             const html = highlightLine(l.text, language);
             return (
               <div className={`diff-line ${l.kind}`} key={li}>
+                <span className="diff-gutter diff-gutter-old" style={{ userSelect: "none" }}>{l.oldNo ?? ""}</span>
+                <span className="diff-gutter diff-gutter-new" style={{ userSelect: "none" }}>{l.newNo ?? ""}</span>
                 <span className="diff-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
                 {html !== null ? (
                   <span className="diff-text hljs" dangerouslySetInnerHTML={{ __html: html }} />

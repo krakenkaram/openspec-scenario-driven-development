@@ -586,3 +586,123 @@ describe("switching worktrees does not leak the previous worktree's diff", () =>
     expect(screen.queryByText("A-DATA")).toBeNull();
   });
 });
+
+describe("the inline diff shows a two-column line-number gutter", () => {
+  const numbered = {
+    ok: true as const,
+    files: [
+      {
+        path: "file.txt",
+        status: "modified" as const,
+        hunks: [
+          {
+            oldStart: 10,
+            oldCount: 2,
+            newStart: 10,
+            newCount: 2,
+            lines: [
+              { kind: "context" as const, text: "ctx", oldNo: 10, newNo: 10 },
+              { kind: "del" as const, text: "gone", oldNo: 11 },
+              { kind: "add" as const, text: "added", newNo: 11 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("shows both numbers for context and only one side for add/del, blank on the absent side", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(numbered),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByText("ctx");
+
+    const ctx = document.querySelector(".diff-line.context") as HTMLElement;
+    expect(ctx.querySelector(".diff-gutter-old")?.textContent).toBe("10");
+    expect(ctx.querySelector(".diff-gutter-new")?.textContent).toBe("10");
+
+    const del = document.querySelector(".diff-line.del") as HTMLElement;
+    expect(del.querySelector(".diff-gutter-old")?.textContent).toBe("11");
+    expect(del.querySelector(".diff-gutter-new")?.textContent).toBe("");
+
+    const add = document.querySelector(".diff-line.add") as HTMLElement;
+    expect(add.querySelector(".diff-gutter-old")?.textContent).toBe("");
+    expect(add.querySelector(".diff-gutter-new")?.textContent).toBe("11");
+  });
+
+  it("marks the gutter non-selectable so copying a diff line yields the code, not the numbers", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(numbered),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByText("ctx");
+
+    const gutter = document.querySelector(".diff-gutter-old") as HTMLElement;
+    expect(gutter).not.toBeNull();
+    expect(gutter.style.userSelect).toBe("none");
+  });
+});
+
+describe("the inline diff separates hunks with a header row", () => {
+  const twoHunks = {
+    ok: true as const,
+    files: [
+      {
+        path: "file.txt",
+        status: "modified" as const,
+        hunks: [
+          {
+            oldStart: 1,
+            oldCount: 2,
+            newStart: 1,
+            newCount: 2,
+            lines: [
+              { kind: "context" as const, text: "top", oldNo: 1, newNo: 1 },
+              { kind: "add" as const, text: "first-change", newNo: 2 },
+            ],
+          },
+          {
+            oldStart: 50,
+            oldCount: 2,
+            newStart: 50,
+            newCount: 2,
+            lines: [
+              { kind: "context" as const, text: "later", oldNo: 50, newNo: 50 },
+              { kind: "add" as const, text: "second-change", newNo: 51 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("renders a hunk-header row showing the @@ range with blank gutter cells", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(twoHunks),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByText("second-change");
+
+    const headers = [...document.querySelectorAll(".diff-hunk-header")];
+    const ranges = headers.map((h) => h.textContent);
+    expect(ranges.some((t) => t?.includes("@@ -50,2 +50,2 @@"))).toBe(true);
+
+    // the header row's own gutter cells carry no number
+    const secondHeader = headers.find((h) => h.textContent?.includes("@@ -50,2 +50,2 @@")) as HTMLElement;
+    expect(secondHeader.querySelector(".diff-gutter-old")?.textContent).toBe("");
+    expect(secondHeader.querySelector(".diff-gutter-new")?.textContent).toBe("");
+  });
+});
