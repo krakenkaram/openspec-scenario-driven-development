@@ -32,6 +32,13 @@ or more Changes at once. The **primary** worktree is the repository's main check
 linked worktrees.
 _Avoid_: Checkout, clone, project.
 
+### Teardown
+Removing a **linked** Worktree and its branch when the **last** Change it holds is archived. A
+Worktree that still holds other Changes is not torn down; the **primary** Worktree is never torn
+down. Teardown always requires the user's explicit acceptance, and the acceptance names everything
+at stake (unmerged branch, uncommitted or untracked work) up front.
+_Avoid_: Remove, delete, cleanup (informal).
+
 ### Sidebar
 The left-hand navigation tree listing each Repository and, when expanded, its Worktrees. The sidebar
 navigates only — choosing what the main panel shows — and holds no other chrome (no title, settings,

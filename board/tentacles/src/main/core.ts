@@ -351,12 +351,26 @@ function runGitText(repo: string, args: string[]): Promise<string | null> {
 // Resolve the merge base (fork point) of the current branch against its upstream
 // base, trying origin/HEAD then master. Returns the merge-base commit sha, or null
 // when neither ref resolves. Argv-only, no shell (see branchCommits).
-async function mergeBase(repo: string): Promise<string | null> {
-  for (const base of ["origin/HEAD", "master"]) {
-    const out = await runGitText(repo, ["merge-base", base, "HEAD"]);
-    if (out !== null && out.trim()) return out.trim();
+// The single authoritative base reference for a repo: the first of origin/HEAD,
+// main, master that resolves. Shared by the branch diff's fork point AND the
+// teardown merge-state check so both agree on what "the base" is (a branch merged
+// into the base the diff uses is the same branch teardown treats as merged).
+async function resolveBaseRef(repo: string): Promise<string | null> {
+  for (const base of ["origin/HEAD", "main", "master"]) {
+    const ok = await runGit(["rev-parse", "--verify", "--quiet", base], repo);
+    if (ok !== null && ok !== "") return base;
   }
   return null;
+}
+
+// The merge base (fork point) of HEAD against the repository's base ref. Returns
+// the merge-base commit sha, or null when no base ref resolves. Argv-only, no
+// shell (see branchCommits).
+async function mergeBase(repo: string): Promise<string | null> {
+  const base = await resolveBaseRef(repo);
+  if (!base) return null;
+  const out = await runGitText(repo, ["merge-base", base, "HEAD"]);
+  return out !== null && out.trim() ? out.trim() : null;
 }
 
 // The git top-level of a scanned directory. `git diff` emits AND interprets file
@@ -961,17 +975,14 @@ function runGitStep(cwd: string, args: string[]): Promise<string | null> {
 }
 
 // True when `branch` is already contained in the repository's base branch, using
-// the same base candidates the branch diff's fork point uses. A merged branch is
-// safe to delete with `git branch -d`; an unmerged one needs the force delete and
-// the user's acceptance.
+// the SAME base ref the branch diff's fork point uses (resolveBaseRef). A merged
+// branch is safe to delete with `git branch -d`; an unmerged one needs the force
+// delete and the user's acceptance.
 async function branchMergedInto(repoPath: string, branch: string): Promise<boolean> {
-  for (const base of ["origin/HEAD", "main", "master"]) {
-    const verified = await runGit(["rev-parse", "--verify", "--quiet", base], repoPath);
-    if (verified === null || verified === "") continue;
-    const ancestor = await runGit(["merge-base", "--is-ancestor", branch, base], repoPath);
-    if (ancestor !== null) return true;
-  }
-  return false;
+  const base = await resolveBaseRef(repoPath);
+  if (!base) return false;
+  const ancestor = await runGit(["merge-base", "--is-ancestor", branch, base], repoPath);
+  return ancestor !== null;
 }
 
 const realTeardownGit: TeardownGit = {
@@ -985,24 +996,48 @@ const realTeardownGit: TeardownGit = {
   deleteBranch: (runFrom, branch, force) => runGitStep(runFrom, ["branch", force ? "-D" : "-d", branch]),
 };
 
-// Decide what archiving `change` would do to its worktree. `applies` is true only
-// when it is the last live Change in a linked (non-primary) worktree; otherwise
-// `keptReason` explains why the worktree stays. Only an eligible plan probes branch
-// merge state and working-tree dirtiness (and builds the warnings), so the primary /
-// not-last paths do no git work beyond identity resolution.
+// Decide what archiving `change` would do to its worktree. Guarded like
+// archiveChange: an unknown repo or a non-live change returns a non-applying plan
+// WITHOUT touching git. `applies` is true only when it is the last live Change in a
+// linked (non-primary) worktree; otherwise `keptReason` explains why the worktree
+// stays. The worktree path and primary status are anchored to the git TOP-LEVEL
+// (not the discovered openspec/changes dir, which can be nested below it), so
+// `git worktree remove` gets the real worktree root and a nested primary checkout
+// is classified correctly. Only an eligible plan probes branch merge state and
+// working-tree dirtiness.
 export async function planTeardown(
   args: Args,
   repoPath: string,
   change: string,
   git: TeardownGit = realTeardownGit
 ): Promise<TeardownPlan> {
-  const worktreePath = path.resolve(repoPath);
-  const id = await resolveGitIdentity(repoPath);
+  const unguarded: TeardownPlan = {
+    applies: false,
+    isPrimary: false,
+    worktreePath: path.resolve(repoPath || ""),
+    branch: null,
+    branchMerged: false,
+    dirty: false,
+    warnings: [],
+  };
+
+  // Guard first: never run git or a filesystem probe for an undiscovered repo or a
+  // change that is not live (mirrors archiveChange / executeArchiveWithTeardown).
+  const repos = discoverRepos(args);
+  const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
+  if (!okRepo || !change || !listChanges(repoPath).includes(change)) {
+    return { ...unguarded, keptReason: "not-last" };
+  }
+
+  // The physical worktree root is the git top-level; the discovered repoPath may be
+  // a sub-directory of it (nested project layout).
+  const top = (await gitToplevel(repoPath)) ?? path.resolve(repoPath);
+  const id = await resolveGitIdentity(top);
   const branch = id.branch;
   const base: TeardownPlan = {
     applies: false,
     isPrimary: id.isPrimary,
-    worktreePath,
+    worktreePath: top,
     branch,
     branchMerged: false,
     dirty: false,
@@ -1014,8 +1049,8 @@ export async function planTeardown(
   if (id.isPrimary) return { ...base, keptReason: "primary" };
 
   const [branchMerged, dirty] = await Promise.all([
-    branch ? git.isMerged(repoPath, branch) : Promise.resolve(false),
-    git.isDirty(repoPath),
+    branch ? git.isMerged(top, branch) : Promise.resolve(false),
+    git.isDirty(top),
   ]);
 
   const warnings: string[] = [
@@ -1071,7 +1106,7 @@ export async function executeArchiveWithTeardown(
     return { archived: true, worktreeRemoved: null, branchDeleted: null, keptReason: plan.keptReason };
   }
 
-  const runFrom = worktreeRunFrom(await resolveGitIdentity(repoPath), repoPath);
+  const runFrom = worktreeRunFrom(await resolveGitIdentity(plan.worktreePath), plan.worktreePath);
 
   // Dirty guard: a dirty worktree is only force-removed on acceptance.
   if (plan.dirty && !acceptances.acceptDirty) {

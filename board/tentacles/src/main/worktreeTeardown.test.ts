@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -41,28 +41,6 @@ function fsArchiver(repoPath: string, change: string): Promise<ArchiveResult> {
   }
 }
 
-// Seed a real git repository (primary checkout on master) with one linked worktree
-// on `feat/x`, holding one live change `add-x`. The branch is cut from master's HEAD
-// so it is merged (an ancestor of master) and the working tree is clean.
-function seedRepoWithLinkedWorktree(): { primary: string; wt: string } {
-  const primary = fs.mkdtempSync(path.join(os.tmpdir(), "td-primary-"));
-  created.push(primary);
-  fs.mkdirSync(path.join(primary, "openspec", "changes"), { recursive: true });
-  git(primary, ["init", "-b", "master"]);
-  git(primary, ["config", "user.email", "t@t.t"]);
-  git(primary, ["config", "user.name", "t"]);
-  fs.writeFileSync(path.join(primary, "base.txt"), "base\n");
-  git(primary, ["add", "base.txt"]);
-  git(primary, ["commit", "-m", "base"]);
-
-  const wt = path.join(primary, "..", path.basename(primary) + "-wt-x");
-  created.push(wt);
-  git(primary, ["worktree", "add", "-b", "feat/x", wt]);
-  // The change lives physically in the worktree's own openspec/changes.
-  fs.mkdirSync(path.join(wt, "openspec", "changes", "add-x"), { recursive: true });
-  return { primary, wt };
-}
-
 function seedPrimary(): string {
   const primary = fs.mkdtempSync(path.join(os.tmpdir(), "td-primary-"));
   created.push(primary);
@@ -92,6 +70,26 @@ function addLinkedWorktree(
   if (opts.dirty) fs.writeFileSync(path.join(wt, "untracked.txt"), "scratch\n");
   return wt;
 }
+
+describe("worktree teardown — archive of the last change in a linked worktree", () => {
+  it("removes the worktree and its merged branch after archiving (real git)", async () => {
+    const primary = seedPrimary();
+    const wt = addLinkedWorktree(primary, { branch: "feat/x", change: "add-x" });
+    const args: Args = { repos: [primary, wt], root: "/nonexistent", depth: 1 };
+
+    const res = await core.executeArchiveWithTeardown(
+      args,
+      wt,
+      "add-x",
+      { acceptUnmerged: false, acceptDirty: false },
+      { archiver: fsArchiver }
+    );
+
+    expect(res).toMatchObject({ archived: true, worktreeRemoved: true, branchDeleted: true });
+    expect(fs.existsSync(wt)).toBe(false);
+    expect(gitOut(primary, ["branch", "--list", "feat/x"])).toBe("");
+  });
+});
 
 describe("worktree teardown — a worktree still holding other live changes is kept", () => {
   it("archives one of two changes and leaves the worktree and branch intact", async () => {
@@ -210,3 +208,84 @@ describe("worktree teardown — archive-first with per-step partial failure", ()
   });
 });
 
+
+describe("worktree teardown — nested OpenSpec root (openspec/changes below the git top-level)", () => {
+  it("removes the linked worktree's TOP-LEVEL, not the nested discovered dir", async () => {
+    const primary = seedPrimary();
+    const wt = path.join(primary, "..", path.basename(primary) + "-nested-wt");
+    created.push(wt);
+    git(primary, ["worktree", "add", "-b", "feat/nested", wt]);
+    // The OpenSpec change lives in a sub-project below the worktree's git top-level.
+    const nested = path.join(wt, "proj");
+    fs.mkdirSync(path.join(nested, "openspec", "changes", "n"), { recursive: true });
+    const args: Args = { repos: [primary, nested], root: "/nonexistent", depth: 1 };
+
+    const res = await core.executeArchiveWithTeardown(args, nested, "n", { acceptUnmerged: false, acceptDirty: false }, { archiver: fsArchiver });
+
+    expect(res).toMatchObject({ archived: true, worktreeRemoved: true, branchDeleted: true });
+    // The whole worktree top-level is gone, not merely the nested dir.
+    expect(fs.existsSync(wt)).toBe(false);
+    expect(gitOut(primary, ["branch", "--list", "feat/nested"])).toBe("");
+  });
+
+  it("classifies a nested primary checkout as primary and keeps it", async () => {
+    const primary = seedPrimary();
+    const nested = path.join(primary, "proj");
+    fs.mkdirSync(path.join(nested, "openspec", "changes", "np"), { recursive: true });
+    const args: Args = { repos: [nested], root: "/nonexistent", depth: 1 };
+
+    const plan = await core.planTeardown(args, nested, "np");
+    expect(plan.isPrimary).toBe(true);
+    expect(plan.keptReason).toBe("primary");
+
+    const res = await core.executeArchiveWithTeardown(args, nested, "np", { acceptUnmerged: false, acceptDirty: false }, { archiver: fsArchiver });
+    expect(res).toMatchObject({ archived: true, worktreeRemoved: null, keptReason: "primary" });
+    expect(fs.existsSync(primary)).toBe(true);
+  });
+});
+
+describe("worktree teardown — merge state uses the same base as the branch diff (origin/HEAD)", () => {
+  it("reports unmerged w.r.t. origin/HEAD even when a local base contains the branch", async () => {
+    const primary = seedPrimary(); // master at C0
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "td-origin-"));
+    created.push(bare);
+    git(bare, ["init", "--bare"]);
+    git(primary, ["remote", "add", "origin", bare]);
+    git(primary, ["push", "-u", "origin", "master"]); // origin/master = C0
+    git(primary, ["remote", "set-head", "origin", "master"]); // origin/HEAD -> origin/master (C0)
+
+    // feat/w diverges (Cf) then is merged into LOCAL master, but origin/HEAD stays at C0.
+    const wt = addLinkedWorktree(primary, { branch: "feat/w", change: "w", diverge: true });
+    git(primary, ["merge", "--ff-only", "feat/w"]); // local master = Cf; origin/HEAD still C0
+    const args: Args = { repos: [primary, wt], root: "/nonexistent", depth: 1 };
+
+    const plan = await core.planTeardown(args, wt, "w");
+    expect(plan.applies).toBe(true);
+    // origin/HEAD is the authoritative base; feat/w is NOT contained by it.
+    expect(plan.branchMerged).toBe(false);
+    expect(plan.warnings.some((warn) => /not merged/i.test(warn))).toBe(true);
+  });
+});
+
+describe("worktree teardown — plan is guarded against unknown repo/change", () => {
+  it("runs no git or filesystem probe for an undiscovered repo or a non-live change", async () => {
+    const primary = seedPrimary();
+    const args: Args = { repos: [primary], root: "/nonexistent", depth: 1 };
+    const spyGit = {
+      isMerged: vi.fn().mockResolvedValue(true),
+      isDirty: vi.fn().mockResolvedValue(false),
+      removeWorktree: vi.fn().mockResolvedValue(null),
+      deleteBranch: vi.fn().mockResolvedValue(null),
+    };
+
+    const unknownRepo = await core.planTeardown(args, "/not/a/discovered/repo", "x", spyGit);
+    expect(unknownRepo.applies).toBe(false);
+
+    fs.mkdirSync(path.join(primary, "openspec", "changes", "real"), { recursive: true });
+    const unknownChange = await core.planTeardown(args, primary, "does-not-exist", spyGit);
+    expect(unknownChange.applies).toBe(false);
+
+    expect(spyGit.isMerged).not.toHaveBeenCalled();
+    expect(spyGit.isDirty).not.toHaveBeenCalled();
+  });
+});

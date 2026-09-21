@@ -202,10 +202,18 @@ export default function App() {
             if (r.worktreeRemoved === false) {
               return { ok: true, error: `Archived, but the worktree could not be removed: ${r.worktreeError || "unknown"}` };
             }
-            if (r.branchDeleted === false && r.branchError && !r.branchError.startsWith("skipped")) {
-              return { ok: true, error: `Archived and worktree removed, but the branch could not be deleted: ${r.branchError}` };
+            if (r.branchDeleted === false) {
+              return { ok: true, error: `Archived and worktree removed, but the branch was not deleted: ${r.branchError || "unknown"}` };
             }
             return { ok: true };
+          };
+        } else if (plan.keptReason === "primary") {
+          confirmed = window.confirm(
+            `Archive "${c.change}"?\n\nThis is the last change in this worktree, but the worktree will be kept because it is the primary checkout.`
+          );
+          execute = async () => {
+            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
           };
         } else {
           confirmed = window.confirm(
