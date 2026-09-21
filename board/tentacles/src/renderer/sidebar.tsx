@@ -14,6 +14,13 @@ function StatusIndicator({ changes }: { changes: WorktreeLeaf["changes"] }) {
   if (status === "in-progress") {
     return <span className="spinner sb-status" title="in progress" />;
   }
+  if (status === "completed") {
+    return (
+      <span className="sb-tick sb-status" title="completed" aria-label="completed">
+        ✓
+      </span>
+    );
+  }
   return <span className={`sb-dot ${status}`} title={status} />;
 }
 
@@ -26,14 +33,18 @@ function SidebarLeaf({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const completed = worktreeStatus(leaf.changes) === "completed";
   return (
-    <button className={`sb-leaf ${selected ? "selected" : ""}`} onClick={onSelect} title={leaf.repoPath}>
+    <button
+      className={`sb-leaf ${selected ? "selected" : ""} ${completed ? "completed" : ""}`}
+      onClick={onSelect}
+      title={leaf.repoPath}
+    >
       <StatusIndicator changes={leaf.changes} />
       <span className="sb-leaf-main">
         <span className="sb-leaf-title">{leaf.branch ?? "(detached)"}</span>
         <span className="sb-leaf-sub">{worktreeDirName(leaf.repoPath)}</span>
       </span>
-      {leaf.isPrimary && <span className="sb-pill">primary</span>}
       <span className="sb-diff-glyph" aria-hidden="true">
         ±
       </span>

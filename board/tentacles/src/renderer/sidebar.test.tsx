@@ -127,7 +127,7 @@ describe("repository selection scopes the main panel; chevron vs body", () => {
 });
 
 describe("worktree leaf composition", () => {
-  it("shows branch title, directory basename, and a primary pill only on the primary checkout", async () => {
+  it("shows branch title and directory basename, and never renders a primary pill", async () => {
     const primary = makeChange({ change: "p", repoPath: "/Code/acme", repositoryId: "/Code/acme/.git", repositoryName: "acme", branch: "main", isPrimary: true });
     const linked = makeChange({ change: "l", repoPath: "/Code/acme-feat-x", repositoryId: "/Code/acme/.git", repositoryName: "acme", branch: "feat/x", isPrimary: false });
     expand("/Code/acme/.git");
@@ -140,22 +140,39 @@ describe("worktree leaf composition", () => {
 
     expect(within(primaryLeaf).getByText("acme", { selector: ".sb-leaf-sub" })).toBeTruthy();
     expect(within(linkedLeaf).getByText("acme-feat-x", { selector: ".sb-leaf-sub" })).toBeTruthy();
-    expect(primaryLeaf.querySelector(".sb-pill")).not.toBeNull();
-    expect(linkedLeaf.querySelector(".sb-pill")).toBeNull();
+    // The "primary" pill is gone from every row.
+    expect(document.querySelector(".sb-pill")).toBeNull();
+  });
+
+  it("still sorts the primary checkout first even though it is no longer labelled", async () => {
+    const primary = makeChange({ change: "p", repoPath: "/Code/acme", repositoryId: "/Code/acme/.git", repositoryName: "acme", branch: "main", isPrimary: true });
+    const linked = makeChange({ change: "l", repoPath: "/Code/acme-feat-x", repositoryId: "/Code/acme/.git", repositoryName: "acme", branch: "feat/x", isPrimary: false });
+    expand("/Code/acme/.git");
+    // scrambled input order: linked first
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([linked, primary], 1)) });
+    render(<App />);
+    await screen.findByText("acme", { selector: ".sb-repo-name" });
+
+    const titles = [...document.querySelectorAll(".sb-leaf-title")].map((e) => e.textContent);
+    expect(titles).toEqual(["main", "feat/x"]);
   });
 });
 
-describe("per-worktree status indicator (least-done-wins)", () => {
+const CHANGES_REQUESTED_PR = { url: "u", number: 1, state: "OPEN", reviewDecision: "CHANGES_REQUESTED", isDraft: false };
+
+describe("per-worktree status indicator (four states, least-done-wins)", () => {
   function leafFor(changes: ReturnType<typeof makeChange>[]) {
     expand("/Code/repo-a/.git");
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(changes, 1)) });
   }
 
-  it("renders a green done dot when all changes are complete", async () => {
+  it("renders a green tick when all changes are complete", async () => {
     leafFor([makeChange({ change: "done1", repoPath: "/Code/repo-a", complete: true })]);
     render(<App />);
     const el = await waitForLeaf();
-    expect(el.querySelector(".sb-dot.done")).not.toBeNull();
+    expect(el.querySelector(".sb-tick")).not.toBeNull();
+    expect(el.querySelector(".spinner")).toBeNull();
+    expect(el.querySelector(".sb-dot")).toBeNull();
   });
 
   it("renders the in-progress spinner when a change is applying", async () => {
@@ -165,14 +182,34 @@ describe("per-worktree status indicator (least-done-wins)", () => {
     expect(el.querySelector(".spinner")).not.toBeNull();
   });
 
-  it("renders the grey idle dot when nothing is active or complete", async () => {
+  it("renders a red circle when a change's PR has requested changes (blocked)", async () => {
+    leafFor([makeChange({ change: "blk1", repoPath: "/Code/repo-a", complete: false, pr: CHANGES_REQUESTED_PR })]);
+    render(<App />);
+    const el = await waitForLeaf();
+    expect(el.querySelector(".sb-dot.blocked")).not.toBeNull();
+    expect(el.querySelector(".spinner")).toBeNull();
+    expect(el.querySelector(".sb-tick")).toBeNull();
+  });
+
+  it("renders the grey idle dot when nothing is active, blocked, or complete", async () => {
     leafFor([makeChange({ change: "idle1", repoPath: "/Code/repo-a", complete: false })]);
     render(<App />);
     const el = (await waitForLeaf());
     expect(el.querySelector(".sb-dot.idle")).not.toBeNull();
   });
 
-  it("least-done-wins keeps a mixed worktree in progress, not done", async () => {
+  it("precedence: blocked wins over in-progress", async () => {
+    leafFor([
+      makeChange({ change: "c-applying", repoPath: "/Code/repo-a", complete: false, applying: true }),
+      makeChange({ change: "c-blocked", repoPath: "/Code/repo-a", complete: false, pr: CHANGES_REQUESTED_PR }),
+    ]);
+    render(<App />);
+    const el = await waitForLeaf();
+    expect(el.querySelector(".sb-dot.blocked")).not.toBeNull();
+    expect(el.querySelector(".spinner")).toBeNull();
+  });
+
+  it("precedence: in-progress wins over completed (least-done-wins)", async () => {
     leafFor([
       makeChange({ change: "c-done", repoPath: "/Code/repo-a", complete: true }),
       makeChange({ change: "c-applying", repoPath: "/Code/repo-a", complete: false, applying: true }),
@@ -180,7 +217,23 @@ describe("per-worktree status indicator (least-done-wins)", () => {
     render(<App />);
     const el = await waitForLeaf();
     expect(el.querySelector(".spinner")).not.toBeNull();
-    expect(el.querySelector(".sb-dot.done")).toBeNull();
+    expect(el.querySelector(".sb-tick")).toBeNull();
+  });
+});
+
+describe("completed worktree row is de-emphasised", () => {
+  it("dims a completed leaf row and leaves an idle row at full weight", async () => {
+    expand("/Code/r/.git");
+    const done = makeChange({ change: "d", repoPath: "/Code/w-done", repositoryId: "/Code/r/.git", repositoryName: "r", branch: "wt-done", complete: true });
+    const idle = makeChange({ change: "i", repoPath: "/Code/w-idle", repositoryId: "/Code/r/.git", repositoryName: "r", branch: "wt-idle", complete: false });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([done, idle], 1)) });
+    render(<App />);
+    await screen.findByText("r");
+
+    const doneLeaf = screen.getByText("wt-done").closest(".sb-leaf") as HTMLElement;
+    const idleLeaf = screen.getByText("wt-idle").closest(".sb-leaf") as HTMLElement;
+    expect(doneLeaf.className).toContain("completed");
+    expect(idleLeaf.className).not.toContain("completed");
   });
 });
 
