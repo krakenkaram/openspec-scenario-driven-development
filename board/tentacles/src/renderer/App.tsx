@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Change, StatusResult } from "../shared/ipc-contract";
-import { RepoGroup } from "./board";
+import { RepoGroup, ChangeCard } from "./board";
 import { groupWorktrees } from "../shared/grouping";
 import { Modal, type ModalSection } from "./modal";
 import { Sidebar, type Selection } from "./sidebar";
@@ -272,7 +272,27 @@ export default function App() {
       />
     );
   } else if (selectedWorktreePath) {
-    main = <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />;
+    const worktreeChanges = grouped
+      .flatMap((g) => g.worktrees)
+      .filter((c) => c.repoPath === selectedWorktreePath);
+    main = (
+      <div className="worktree-detail">
+        <div className="worktree-detail-nodes">
+          {worktreeChanges.map((c) => (
+            <ChangeCard
+              key={keyOf(c)}
+              c={c}
+              showBranch={false}
+              openArtifacts={openArtifacts}
+              onArchive={onArchive}
+              busy={archiving.has(keyOf(c))}
+              removing={removing.has(keyOf(c))}
+            />
+          ))}
+        </div>
+        <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />
+      </div>
+    );
   } else {
     main = (
       <div className="empty select-hint">

@@ -237,3 +237,8 @@ html[data-theme="light"] {
 .diff-panel-title { font-family:ui-monospace,monospace; font-size:0.82rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .diff-panel .diff-body { flex:1; min-height:0; }
 .diff-stale { font-size:0.7rem; color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 45%,var(--border)); background:color-mix(in srgb,var(--warn) 12%,transparent); border-radius:6px; padding:2px 9px; }
+
+/* Worktree-detail: change chain(s) pinned above the worktree's single live diff */
+.worktree-detail { display:flex; flex-direction:column; height:calc(100vh - 62px); }
+.worktree-detail-nodes { flex:0 0 auto; max-height:45%; overflow:auto; padding:16px 20px 4px; }
+.worktree-detail .diff-panel { height:auto; flex:1; min-height:0; }
