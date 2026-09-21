@@ -225,6 +225,55 @@ describe("the inline diff degrades gracefully", () => {
     expect(screen.queryByText(/couldn't refresh/i)).toBeNull();
   });
 
+  it("keeps a file expanded and refreshes its full contents across the 3s poll", async () => {
+    vi.useFakeTimers();
+    const compact = {
+      ok: true as const,
+      files: [{ path: "big.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "changed-v1" }] }] }],
+    };
+    const fullV1 = {
+      ok: true as const,
+      files: [{ path: "big.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "context" as const, text: "ctx-far" }, { kind: "add" as const, text: "changed-v1" }] }] }],
+    };
+    const fullV2 = {
+      ok: true as const,
+      files: [{ path: "big.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "context" as const, text: "ctx-far" }, { kind: "add" as const, text: "changed-v2" }] }] }],
+    };
+    const getFileDiff = vi.fn().mockResolvedValueOnce(fullV1).mockResolvedValue(fullV2);
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      // fresh object per poll (as the real getDiff news-up each time), so the
+      // panel re-renders and the expanded-file refresh effect runs.
+      getDiff: vi.fn(() => Promise.resolve({ ok: true as const, files: compact.files.map((f) => ({ ...f })) })),
+      getFileDiff,
+    });
+
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // expand → full v1 shows
+    fireEvent.click(screen.getByRole("button", { name: "Expand full file" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("ctx-far")).toBeTruthy();
+    expect(screen.getByText("changed-v1")).toBeTruthy();
+
+    // after the 3s poll: still expanded AND the full contents refreshed to v2
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.getByText("ctx-far")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Collapse" })).toBeTruthy();
+    expect(screen.getByText("changed-v2")).toBeTruthy();
+  });
+
   it("shows a loading state on first load until the first diff resolves", async () => {
     let resolveDiff!: (v: typeof diffModel) => void;
     const getDiff = vi.fn(

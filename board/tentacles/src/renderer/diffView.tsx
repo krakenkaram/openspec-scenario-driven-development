@@ -126,6 +126,28 @@ export function DiffView({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [fullByPath, setFullByPath] = useState<Record<string, DiffFile>>({});
 
+  // When the live diff refreshes (the inline panel re-polls every 3s), re-fetch
+  // the full contents of any expanded file so the expanded view stays live rather
+  // than showing a stale snapshot — and so a full fetch that was missed or came
+  // back empty on the first expand is retried on the next refresh instead of
+  // silently leaving the hunk view in place.
+  useEffect(() => {
+    if (!result || !result.ok) return;
+    const present = new Set(result.files.map((f) => f.path));
+    let cancelled = false;
+    for (const path of expanded) {
+      if (!present.has(path)) continue;
+      void getFullFile(path).then((full) => {
+        if (!cancelled && full) setFullByPath((prev) => ({ ...prev, [path]: full }));
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally keyed on the diff result: refresh expanded files per poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
   const files = result && result.ok ? result.files : [];
   const sel = files.length ? Math.min(selected, files.length - 1) : 0;
   const current = files[sel];
