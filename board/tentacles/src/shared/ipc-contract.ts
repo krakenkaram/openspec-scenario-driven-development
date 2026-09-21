@@ -83,9 +83,25 @@ export type DiffLineKind = "add" | "del" | "context";
 export interface DiffLine {
   kind: DiffLineKind;
   text: string;
+  // The line's position in the old (pre-change) and new (post-change) file,
+  // computed main-side from the hunk's `@@` header. A line absent on one side
+  // (an addition has no old position, a deletion has no new position) omits that
+  // field, which the renderer paints as a blank gutter cell.
+  oldNo?: number;
+  newNo?: number;
 }
 export interface DiffHunk {
   lines: DiffLine[];
+  // The hunk's `@@ -oldStart,oldCount +newStart,newCount @@` header, retained so
+  // the numbering walk seeds from the header (never by counting from the top of
+  // the file) and the renderer can draw a hunk-header row explaining the jump
+  // across skipped regions. Always populated by parseDiff; optional so hand-built
+  // model literals (tests) need not restate a header they do not assert on, in
+  // which case the renderer simply draws no header row.
+  oldStart?: number;
+  oldCount?: number;
+  newStart?: number;
+  newCount?: number;
 }
 export type DiffFileStatus = "added" | "deleted" | "modified" | "renamed" | "binary";
 export interface DiffFile {

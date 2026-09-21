@@ -69,3 +69,23 @@ _Avoid_: Install, configure, provision.
 A check that verifies a target's Setup is present and correct and reports each finding pass/fail. When
 findings fail, the doctor offers to repair them (a repair re-runs Setup for the affected target).
 _Avoid_: Health check, verify, lint.
+
+### Branch diff
+The set of changes on a Worktree's branch — its commits since the fork point from the base branch,
+unioned with uncommitted working-tree changes — shown file by file. Presented inline beneath the
+selected Worktree and, on demand, in an overlay. Both surfaces render the same Branch diff identically.
+_Avoid_: Patch, changeset, git diff (informal).
+
+### Hunk
+A contiguous block of changed lines within a file's Branch diff, together with a few unchanged lines of
+surrounding context. A file diff is a sequence of Hunks; the unchanged gaps between them are skipped,
+which is why line positions jump from one Hunk to the next.
+_Avoid_: Block, section, chunk.
+
+### Line-number gutter
+The left margin of the Branch diff that labels each line with its position in the file. Because a diff
+shows two versions of a file, the gutter carries two positions per line: the line's number in the old
+(pre-change) file and in the new (post-change) file. A line present on only one side — an added or a
+removed line — is numbered only on that side. Positions are read from each Hunk's own boundaries, so
+they always agree with what other git tools show.
+_Avoid_: Line column, margin, sidebar.

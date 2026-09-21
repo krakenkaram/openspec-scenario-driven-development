@@ -441,6 +441,8 @@ export function parseDiff(raw: string): DiffFile[] {
   const files: DiffFile[] = [];
   let file: DiffFile | null = null;
   let hunk: DiffHunk | null = null;
+  let oldNo = 0;
+  let newNo = 0;
 
   for (const line of String(raw ?? "").split("\n")) {
     if (line.startsWith("diff --git")) {
@@ -467,15 +469,25 @@ export function parseDiff(raw: string): DiffFile[] {
       continue;
     }
     if (line.startsWith("@@")) {
-      hunk = { lines: [] };
+      // @@ -oldStart[,oldCount] +newStart[,newCount] @@; an omitted count is 1
+      // (git writes `@@ -1 +1 @@` for a single-line hunk). Seed the walk from the
+      // header so each hunk re-bases and numbers never run across a skipped gap.
+      const m = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      const oldStart = m ? parseInt(m[1] as string, 10) : 0;
+      const oldCount = m && m[2] !== undefined ? parseInt(m[2], 10) : 1;
+      const newStart = m ? parseInt(m[3] as string, 10) : 0;
+      const newCount = m && m[4] !== undefined ? parseInt(m[4], 10) : 1;
+      hunk = { lines: [], oldStart, oldCount, newStart, newCount };
       file.hunks.push(hunk);
+      oldNo = oldStart;
+      newNo = newStart;
       continue;
     }
     if (line.startsWith("\\")) continue;
     if (!hunk) continue;
-    if (line.startsWith("+")) hunk.lines.push({ kind: "add", text: line.slice(1) });
-    else if (line.startsWith("-")) hunk.lines.push({ kind: "del", text: line.slice(1) });
-    else if (line.startsWith(" ")) hunk.lines.push({ kind: "context", text: line.slice(1) });
+    if (line.startsWith("+")) hunk.lines.push({ kind: "add", text: line.slice(1), newNo: newNo++ });
+    else if (line.startsWith("-")) hunk.lines.push({ kind: "del", text: line.slice(1), oldNo: oldNo++ });
+    else if (line.startsWith(" ")) hunk.lines.push({ kind: "context", text: line.slice(1), oldNo: oldNo++, newNo: newNo++ });
   }
   return files;
 }
