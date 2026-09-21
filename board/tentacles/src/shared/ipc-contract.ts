@@ -146,6 +146,15 @@ export type OpenPathResult = { ok: true } | { ok: false; error: string };
 // Crew is a superset of Kiro (see CONTEXT.md glossary).
 export type Target = "claude" | "kiro" | "kiro-crew";
 
+// One available OpenSpec schema, as reported by `openspec schemas --json`: its
+// name, description, and its planning artifacts in declared order. Surfaced
+// read-only in Settings so the user can see which schemas a change can use.
+export interface SchemaInfo {
+  name: string;
+  description: string;
+  artifacts: string[];
+}
+
 // One row of an Install run or a Doctor run: a labelled step/check with a
 // pass/fail and an optional one-line reason. Install and Doctor share this shape
 // so the renderer renders both with one visual language.

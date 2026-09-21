@@ -29,6 +29,7 @@ import type {
   Pr,
   ReadFileResult,
   OpenPathResult,
+  SchemaInfo,
   StatusResult,
   Target,
 } from "../shared/ipc-contract";
@@ -1083,6 +1084,34 @@ export function schemaResolves(jsonOutput: string, name: string): boolean {
   }
 }
 
+// Parse `openspec schemas --json` into the board's SchemaInfo list: each entry's
+// name, description, and ordered artifact steps. Malformed output (not JSON, not
+// an array) yields [] rather than throwing, and entries missing a string name or
+// an artifacts array are skipped — the same defensive posture as schemaResolves
+// / parseTargets. Description defaults to "" when absent.
+export function parseSchemas(jsonOutput: string): SchemaInfo[] {
+  let list: unknown;
+  try {
+    list = JSON.parse(jsonOutput);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list)) return [];
+  const out: SchemaInfo[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as { name?: unknown; description?: unknown; artifacts?: unknown };
+    if (typeof e.name !== "string") continue;
+    if (!Array.isArray(e.artifacts) || !e.artifacts.every((a) => typeof a === "string")) continue;
+    out.push({
+      name: e.name,
+      description: typeof e.description === "string" ? e.description : "",
+      artifacts: e.artifacts as string[],
+    });
+  }
+  return out;
+}
+
 // `kirocrew doctor` prints "strict identity: ✅ routed" when healthy and a
 // negative such as "strict identity: not routed" otherwise, amongst other rows
 // (e.g. "kirocrew-core route: ✅ routed"). Isolate the `strict identity:` row so
@@ -1290,6 +1319,7 @@ export default {
   missingEntries,
   missingWorkflows,
   schemaResolves,
+  parseSchemas,
   strictIdentityRouted,
   sessionControlEnabled,
   collect,
