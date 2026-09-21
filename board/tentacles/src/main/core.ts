@@ -1298,7 +1298,6 @@ export function planDoctorChecks(targets: Target[], ctx: { home: string }): Doct
 }
 
 export default {
-  PHASES: ATDD_FALLBACK_PHASES,
   ATDD_FALLBACK_PHASES,
   PRUNE,
   DEFAULT_DEPTH,
