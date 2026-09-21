@@ -56,6 +56,8 @@ export type MockApi = {
   getDiff: ReturnType<typeof vi.fn>;
   getFileDiff: ReturnType<typeof vi.fn>;
   archive: ReturnType<typeof vi.fn>;
+  archivePlan: ReturnType<typeof vi.fn>;
+  archiveExecute: ReturnType<typeof vi.fn>;
   getSettings: ReturnType<typeof vi.fn>;
   setSettings: ReturnType<typeof vi.fn>;
   chooseDirectory: ReturnType<typeof vi.fn>;
@@ -77,6 +79,17 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     getDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
     getFileDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
     archive: vi.fn().mockResolvedValue({ ok: true }),
+    archivePlan: vi.fn().mockResolvedValue({
+      applies: false,
+      keptReason: "primary",
+      isPrimary: true,
+      worktreePath: "/Code/repo-a",
+      branch: null,
+      branchMerged: false,
+      dirty: false,
+      warnings: [],
+    }),
+    archiveExecute: vi.fn().mockResolvedValue({ archived: true, worktreeRemoved: null, branchDeleted: null }),
     getSettings: vi.fn().mockResolvedValue({ root: "/Code", notifications: "enabled", targets: [] }),
     setSettings: vi.fn().mockResolvedValue({ ok: true, root: "/Code", notifications: "enabled", targets: [] }),
     chooseDirectory: vi.fn().mockResolvedValue({ path: null }),

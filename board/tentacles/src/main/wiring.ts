@@ -30,7 +30,11 @@ import {
 import type { Args, BoardNotification, NotificationSetting, NotifyState, Settings, InstallStep, DoctorCheck } from "./core";
 import type {
   ArchiveArgs,
+  ArchiveExecuteArgs,
+  ArchiveExecuteResult,
   ArchiveResult,
+  TeardownAcceptances,
+  TeardownPlan,
   BoardSettings,
   Change,
   ChannelMap,
@@ -60,6 +64,8 @@ export const IPC: ChannelMap = {
   getDiff: "board:getDiff",
   getFileDiff: "board:getFileDiff",
   archive: "board:archive",
+  archivePlan: "board:archivePlan",
+  archiveExecute: "board:archiveExecute",
   getSettings: "board:getSettings",
   setSettings: "board:setSettings",
   chooseDirectory: "board:chooseDirectory",
@@ -80,6 +86,13 @@ export interface BoardCore {
   getDiff(args: Args, repoPath: string): Promise<DiffResult>;
   getFileDiff(args: Args, repoPath: string, filePath: string): Promise<DiffResult>;
   archiveChange(args: Args, repoPath: string, change: string): Promise<ArchiveResult>;
+  planTeardown(args: Args, repoPath: string, change: string): Promise<TeardownPlan>;
+  executeArchiveWithTeardown(
+    args: Args,
+    repoPath: string,
+    change: string,
+    acceptances: TeardownAcceptances
+  ): Promise<ArchiveExecuteResult>;
   openWorktree(args: Args, target: string, opener: OpenPath): Promise<OpenPathResult>;
   openRepoFile(args: Args, repoPath: string, filePath: string, opener: OpenPath): Promise<OpenPathResult>;
   listSchemas(cwd?: string, home?: string): Promise<SchemaInfo[]>;
@@ -190,6 +203,17 @@ export function makeHandlers(
       const { repoPath, change } = payload || ({} as Partial<ArchiveArgs>);
       return core.archiveChange(getArgs(), repoPath as string, change as string);
     },
+    archivePlan: (_event: IpcMainInvokeEvent, payload: ArchiveArgs | undefined) => {
+      const { repoPath, change } = payload || ({} as Partial<ArchiveArgs>);
+      return core.planTeardown(getArgs(), repoPath as string, change as string);
+    },
+    archiveExecute: (_event: IpcMainInvokeEvent, payload: ArchiveExecuteArgs | undefined) => {
+      const { repoPath, change, acceptUnmerged, acceptDirty } = payload || ({} as Partial<ArchiveExecuteArgs>);
+      return core.executeArchiveWithTeardown(getArgs(), repoPath as string, change as string, {
+        acceptUnmerged: Boolean(acceptUnmerged),
+        acceptDirty: Boolean(acceptDirty),
+      });
+    },
     getSettings: (): BoardSettings => ({
       root: settings ? settings.getRoot() : getArgs().root,
       notifications: settings ? resolveNotifications(settings.read()) : "enabled",
@@ -294,6 +318,8 @@ export function registerIpc(
   ipcMain.handle(IPC.getDiff, handlers.getDiff);
   ipcMain.handle(IPC.getFileDiff, handlers.getFileDiff);
   ipcMain.handle(IPC.archive, handlers.archive);
+  ipcMain.handle(IPC.archivePlan, handlers.archivePlan);
+  ipcMain.handle(IPC.archiveExecute, handlers.archiveExecute);
   ipcMain.handle(IPC.getSettings, handlers.getSettings);
   ipcMain.handle(IPC.setSettings, handlers.setSettings);
   ipcMain.handle(IPC.chooseDirectory, handlers.chooseDirectory);
