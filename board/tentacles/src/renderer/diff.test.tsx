@@ -1,18 +1,27 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { makeChange, makeStatus, mockApi } from "./test-fixtures";
+import { makeChange, makeStatus, mockApi, selectRepo } from "./test-fixtures";
 
-function applyingChange() {
+// The diff is viewed by selecting a worktree leaf in the sidebar. Seed the repo
+// as selected + expanded so its single worktree leaf is on screen, then click it.
+beforeEach(() => {
+  localStorage.clear();
+  selectRepo();
+});
+
+function worktreeChange() {
   return makeChange({
-    change: "applying-demo",
+    change: "wt-demo",
     repoPath: "/Code/repo-a",
     applying: true,
     planningComplete: true,
     apply: { source: "commits", total: 3, done: null, commits: 2, file: null },
   });
 }
+
+const LEAF = "/Code/repo-a";
 
 const diffModel = {
   ok: true as const,
@@ -25,29 +34,30 @@ const diffModel = {
   ],
 };
 
-describe("apply-node git button opens the diff modal", () => {
-  it("requests the branch diff for the change's repo and opens the modal", async () => {
+describe("selecting a worktree opens its live branch diff inline", () => {
+  it("requests the branch diff for the worktree's repoPath and renders it inline, not in a modal", async () => {
     const api = mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue(diffModel),
     });
     const user = userEvent.setup();
 
     render(<App />);
-    await screen.findByText("applying-demo");
-
-    await user.click(screen.getByTitle("View branch diff"));
+    await user.click(await screen.findByTitle(LEAF));
 
     expect(api.getDiff).toHaveBeenCalledWith("/Code/repo-a");
-    await waitFor(() => expect(document.querySelector(".diff-overlay")?.className).toContain("open"));
+    // rendered inline in the main panel, with no modal overlay
+    await waitFor(() => expect(document.querySelector(".diff-panel")).not.toBeNull());
+    expect(document.querySelector(".diff-overlay")).toBeNull();
+    expect(await screen.findByText("new")).toBeTruthy();
   });
 });
 
-describe("diff modal renders additions green and removals red", () => {
+describe("the inline diff classifies additions green and removals red", () => {
   it("classifies added and removed lines and renders line text as text, not DOM", async () => {
     const evil = "<img src=x onerror=alert(1)>";
     mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue({
         ok: true,
         files: [
@@ -70,8 +80,7 @@ describe("diff modal renders additions green and removals red", () => {
     const user = userEvent.setup();
 
     render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
+    await user.click(await screen.findByTitle(LEAF));
 
     const add = await waitFor(() => {
       const el = document.querySelector(".diff-line.add");
@@ -87,13 +96,13 @@ describe("diff modal renders additions green and removals red", () => {
   });
 });
 
-describe("diff refreshes live only while the modal is open", () => {
+describe("the inline diff refreshes live every 3s while the worktree is selected", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("re-requests the diff on the refresh tick while open, and stops once closed", async () => {
+  it("re-requests the diff every 3s while selected, and stops once deselected", async () => {
     vi.useFakeTimers();
     const api = mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue(diffModel),
     });
 
@@ -102,186 +111,199 @@ describe("diff refreshes live only while the modal is open", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    fireEvent.click(screen.getByTitle("View branch diff"));
+    fireEvent.click(screen.getByTitle(LEAF));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(api.getDiff).toHaveBeenCalledTimes(1); // initial fetch on open
+    expect(api.getDiff).toHaveBeenCalledTimes(1); // initial fetch on select
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
+      await vi.advanceTimersByTimeAsync(3000);
     });
-    expect(api.getDiff).toHaveBeenCalledTimes(2); // re-requested on the tick while open
+    expect(api.getDiff).toHaveBeenCalledTimes(2); // re-requested on the 3s tick
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    // deselect by selecting the repository row again → the panel unmounts
+    fireEvent.click(document.querySelector(".sb-repo-row") as HTMLElement);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
+      await vi.advanceTimersByTimeAsync(6000);
     });
-    expect(api.getDiff).toHaveBeenCalledTimes(2); // no further requests once closed
+    expect(api.getDiff).toHaveBeenCalledTimes(2); // no further polls once deselected
   });
 });
 
-describe("apply-node git button is a ± affordance below the node label", () => {
-  it("renders the button glyph as ± and places it after the phase/state text", async () => {
-    mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
-      getDiff: vi.fn().mockResolvedValue(diffModel),
-    });
+describe("the inline diff degrades gracefully", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows a neutral placeholder for an empty branch and keeps polling", async () => {
+    vi.useFakeTimers();
+    const getDiff = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, files: [] })
+      .mockResolvedValue(diffModel);
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])), getDiff });
 
     render(<App />);
-    await screen.findByText("applying-demo");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
 
-    const btn = screen.getByTitle("View branch diff");
-    expect(btn.textContent).toBe("±");
+    // empty branch → placeholder
+    expect(screen.getByText(/No changes on this branch/i)).toBeTruthy();
 
-    // The label (phase/state) comes first in the DOM; the button follows it.
-    const node = btn.closest(".node") as HTMLElement;
-    const state = node.querySelector(".state") as HTMLElement;
-    expect(state.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // keeps polling: the next non-empty result replaces the placeholder
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.getByText("new")).toBeTruthy();
+    expect(screen.queryByText(/No changes on this branch/i)).toBeNull();
+  });
+
+  it("keeps the last diff with a 'couldn't refresh' indicator when a poll fails", async () => {
+    vi.useFakeTimers();
+    const getDiff = vi.fn().mockResolvedValueOnce(diffModel).mockRejectedValueOnce(new Error("bridge down")).mockResolvedValue(diffModel);
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])), getDiff });
+
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("new")).toBeTruthy();
+
+    // a failing refresh retains the last diff and surfaces the indicator
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.getByText("new")).toBeTruthy();
+    expect(screen.getByText(/couldn't refresh/i)).toBeTruthy();
+
+    // the next successful poll clears the indicator
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.queryByText(/couldn't refresh/i)).toBeNull();
+  });
+
+  it("shows a loading state on first load until the first diff resolves", async () => {
+    let resolveDiff!: (v: typeof diffModel) => void;
+    const getDiff = vi.fn(
+      (): Promise<typeof diffModel> => new Promise((r) => (resolveDiff = r))
+    );
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])), getDiff });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+
+    expect(screen.getByText(/Loading…/)).toBeTruthy();
+    await act(async () => {
+      resolveDiff(diffModel);
+    });
+    expect(await screen.findByText("new")).toBeTruthy();
   });
 });
 
-describe("diff modal lists files in a sidebar and shows one at a time", () => {
-  const twoFiles = {
+describe("the inline diff lists files in a tree and can expand a file", () => {
+  const nested = {
     ok: true as const,
     files: [
-      { path: "a.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "AAA" }] }] },
-      { path: "b.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "BBB" }] }] },
+      { path: "src/main/core.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "A" }] }] },
+      { path: "src/renderer/app.tsx", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "B" }] }] },
+      { path: "docs/adr/0001-deep/thing.md", status: "added" as const, hunks: [{ lines: [{ kind: "add" as const, text: "C" }] }] },
+      { path: "README.md", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "D" }] }] },
     ],
   };
 
-  it("lists every changed file and switches the shown file on click", async () => {
+  it("groups files under folder rows and switches the shown file on click", async () => {
     mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
-      getDiff: vi.fn().mockResolvedValue(twoFiles),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(nested),
     });
     const user = userEvent.setup();
 
     render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
+    await user.click(await screen.findByTitle(LEAF));
 
-    // Both files are listed in the sidebar.
-    expect(await screen.findByRole("button", { name: /a\.txt/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /b\.txt/ })).toBeTruthy();
+    const dirLabels = await waitFor(() => {
+      const labels = [...document.querySelectorAll(".diff-tree-dir")].map((e) => e.textContent);
+      expect(labels.length).toBeGreaterThan(0);
+      return labels;
+    });
+    expect(dirLabels).toContain("src/");
+    expect(dirLabels).toContain("main/");
+    expect(dirLabels).toContain("docs/adr/0001-deep/");
 
-    // Only the first file's content shows initially.
-    expect(screen.getByText("AAA")).toBeTruthy();
-    expect(screen.queryByText("BBB")).toBeNull();
+    const leaf = await screen.findByRole("button", { name: /core\.ts/ });
+    expect(leaf).toHaveAttribute("title", "src/main/core.ts");
 
-    // Clicking the second file switches the shown content.
-    await user.click(screen.getByRole("button", { name: /b\.txt/ }));
-    expect(screen.getByText("BBB")).toBeTruthy();
-    expect(screen.queryByText("AAA")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /app\.tsx/ }));
+    expect(screen.getByText("B")).toBeTruthy();
+    expect(screen.queryByText("A")).toBeNull();
   });
-
-  it("clamps to a valid file when a live refresh drops the selected file", async () => {
-    vi.useFakeTimers();
-    try {
-      const shrinking = vi
-        .fn()
-        .mockResolvedValueOnce(twoFiles)
-        .mockResolvedValue({
-          ok: true as const,
-          files: [
-            { path: "a.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "AAA" }] }] },
-          ],
-        });
-      mockApi({
-        getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
-        getDiff: shrinking,
-      });
-
-      render(<App />);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
-      });
-
-      fireEvent.click(screen.getByTitle("View branch diff"));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
-      });
-
-      // Select the second file, then the next poll returns a list without it.
-      fireEvent.click(screen.getByRole("button", { name: /b\.txt/ }));
-      expect(screen.getByText("BBB")).toBeTruthy();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(15000);
-      });
-
-      // The remaining file is shown; the stale selection does not leak or crash.
-      expect(screen.getByText("AAA")).toBeTruthy();
-      expect(screen.queryByText("BBB")).toBeNull();
-      expect(screen.queryByRole("button", { name: /b\.txt/ })).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("diff modal can expand a file to its full contents with changes inline", () => {
-  const compact = {
-    ok: true as const,
-    files: [
-      {
-        path: "big.txt",
-        status: "modified" as const,
-        hunks: [{ lines: [{ kind: "context" as const, text: "ctx-near" }, { kind: "add" as const, text: "changed" }] }],
-      },
-    ],
-  };
-  const full = {
-    ok: true as const,
-    files: [
-      {
-        path: "big.txt",
-        status: "modified" as const,
-        hunks: [
-          {
-            lines: [
-              { kind: "context" as const, text: "ctx-far" },
-              { kind: "context" as const, text: "ctx-near" },
-              { kind: "add" as const, text: "changed" },
-            ],
-          },
-        ],
-      },
-    ],
-  };
 
   it("fetches and shows the whole file on expand and returns to the compact hunks on collapse", async () => {
+    const compact = {
+      ok: true as const,
+      files: [
+        {
+          path: "big.txt",
+          status: "modified" as const,
+          hunks: [{ lines: [{ kind: "context" as const, text: "ctx-near" }, { kind: "add" as const, text: "changed" }] }],
+        },
+      ],
+    };
+    const full = {
+      ok: true as const,
+      files: [
+        {
+          path: "big.txt",
+          status: "modified" as const,
+          hunks: [
+            {
+              lines: [
+                { kind: "context" as const, text: "ctx-far" },
+                { kind: "context" as const, text: "ctx-near" },
+                { kind: "add" as const, text: "changed" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
     const api = mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue(compact),
       getFileDiff: vi.fn().mockResolvedValue(full),
     });
     const user = userEvent.setup();
 
     render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
+    await user.click(await screen.findByTitle(LEAF));
 
-    // Compact view: the far context line is not shown.
     expect(await screen.findByText("changed")).toBeTruthy();
     expect(screen.queryByText("ctx-far")).toBeNull();
 
-    // Expand → the full file (including the far context) is fetched and shown.
     await user.click(screen.getByRole("button", { name: /expand full file/i }));
     expect(api.getFileDiff).toHaveBeenCalledWith("/Code/repo-a", "big.txt");
     expect(await screen.findByText("ctx-far")).toBeTruthy();
 
-    // Collapse → back to the compact hunks.
-    await user.click(screen.getByRole("button", { name: /collapse/i }));
+    await user.click(screen.getByRole("button", { name: "Collapse" }));
     expect(screen.queryByText("ctx-far")).toBeNull();
     expect(screen.getByText("changed")).toBeTruthy();
   });
 });
 
-describe("diff modal syntax-highlights code by language", () => {
+describe("the inline diff syntax-highlights code by language", () => {
   it("tokenises a known language into highlight.js spans", async () => {
     mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue({
         ok: true,
         files: [
@@ -296,8 +318,7 @@ describe("diff modal syntax-highlights code by language", () => {
     const user = userEvent.setup();
 
     render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
+    await user.click(await screen.findByTitle(LEAF));
 
     const keyword = await waitFor(() => {
       const el = document.querySelector(".diff-body .hljs-keyword");
@@ -305,13 +326,12 @@ describe("diff modal syntax-highlights code by language", () => {
       return el as HTMLElement;
     });
     expect(keyword.textContent).toBe("const");
-    // the full line text is preserved intact despite being split into tokens
     expect(document.querySelector(".diff-line.add")?.textContent).toContain("const answer = 42;");
   });
 
   it("renders an unknown extension as plain text without highlight spans", async () => {
     mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue({
         ok: true,
         files: [
@@ -326,65 +346,9 @@ describe("diff modal syntax-highlights code by language", () => {
     const user = userEvent.setup();
 
     render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
+    await user.click(await screen.findByTitle(LEAF));
 
     await screen.findByText("const answer = 42;");
     expect(document.querySelector(".diff-body .hljs-keyword")).toBeNull();
-  });
-});
-
-describe("diff modal sidebar is a hierarchical folder tree", () => {
-  const nested = {
-    ok: true as const,
-    files: [
-      { path: "src/main/core.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "A" }] }] },
-      { path: "src/renderer/app.tsx", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "B" }] }] },
-      { path: "docs/adr/0001-deep/thing.md", status: "added" as const, hunks: [{ lines: [{ kind: "add" as const, text: "C" }] }] },
-      { path: "README.md", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "D" }] }] },
-    ],
-  };
-
-  it("groups files under folder rows and shows only the file basename at the leaf", async () => {
-    mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
-      getDiff: vi.fn().mockResolvedValue(nested),
-    });
-    const user = userEvent.setup();
-
-    render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
-
-    // folder rows are present (src, and its sub-folders); the deep single-child
-    // chain docs/adr/0001-deep collapses into one row.
-    const dirLabels = [...document.querySelectorAll(".diff-tree-dir")].map((e) => e.textContent);
-    expect(dirLabels).toContain("src/");
-    expect(dirLabels).toContain("main/");
-    expect(dirLabels).toContain("renderer/");
-    expect(dirLabels).toContain("docs/adr/0001-deep/");
-
-    // leaves show the basename only, not the full path
-    const leaf = await screen.findByRole("button", { name: /core\.ts/ });
-    expect(leaf.textContent).toContain("core.ts");
-    expect(leaf.textContent).not.toContain("src/main");
-    // the full path is still available as the tooltip
-    expect(leaf).toHaveAttribute("title", "src/main/core.ts");
-  });
-
-  it("switches the shown file when a leaf in the tree is clicked", async () => {
-    mockApi({
-      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
-      getDiff: vi.fn().mockResolvedValue(nested),
-    });
-    const user = userEvent.setup();
-
-    render(<App />);
-    await screen.findByText("applying-demo");
-    await user.click(screen.getByTitle("View branch diff"));
-
-    await user.click(screen.getByRole("button", { name: /app\.tsx/ }));
-    expect(screen.getByText("B")).toBeTruthy();
-    expect(screen.queryByText("A")).toBeNull();
   });
 });

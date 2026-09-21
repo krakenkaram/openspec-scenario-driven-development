@@ -1,11 +1,15 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import type { ArchiveResult } from "../shared/ipc-contract";
-import { makeChange, makeStatus, mockApi } from "./test-fixtures";
+import { makeChange, makeStatus, mockApi, selectRepo } from "./test-fixtures";
 
 describe("archive", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    selectRepo();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("confirmed archive calls the bridge and removes the row", async () => {
