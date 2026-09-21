@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, shell, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, Notification, shell, dialog, Tray, Menu, nativeImage } from "electron";
 import type { OpenDialogOptions } from "electron";
 import path from "node:path";
 import os from "node:os";
@@ -107,6 +107,9 @@ app.whenReady().then(() => {
     settings,
     chooseDirectory,
     openPath: (target: string) => shell.openPath(target),
+    Tray,
+    Menu,
+    nativeImage,
     setup: {
       repoRoot: core.resolveBundleRoot(),
       home: os.homedir(),

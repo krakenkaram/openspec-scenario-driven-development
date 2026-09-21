@@ -389,6 +389,11 @@ export interface BootstrapDeps {
   chooseDirectory?: ChooseDirectory;
   openPath?: OpenPath;
   setup?: SetupDeps;
+  // macOS tray collaborators, injected so the wiring stays unit-testable with
+  // fakes. Supplied by main.ts on darwin; omitted on other platforms (no tray).
+  Tray?: typeof import("electron").Tray;
+  Menu?: typeof import("electron").Menu;
+  nativeImage?: typeof import("electron").nativeImage;
 }
 
 // Ordered startup coordinator. Registers IPC handlers BEFORE any window can call
@@ -409,20 +414,83 @@ export async function bootstrap({
   chooseDirectory,
   openPath,
   setup,
+  Tray,
+  Menu,
+  nativeImage,
 }: BootstrapDeps) {
   registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup);
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
+  const isMac = platform === "darwin";
   let started = false;
+  // On macOS 'x' hides the window rather than destroying it, so the app stays
+  // resident. `isQuitting` is set on `before-quit` (fired by Cmd+Q, Dock → Quit,
+  // the app menu, and the tray's Quit) so an explicit quit is allowed through
+  // while an ordinary close only hides.
+  let isQuitting = false;
+
+  const currentWindow = (): BrowserWindow | undefined => {
+    const open = BrowserWindowCtor.getAllWindows ? BrowserWindowCtor.getAllWindows() : [];
+    return open[0] as BrowserWindow | undefined;
+  };
+  const showWindow = (win: BrowserWindow) => {
+    win.show();
+    win.focus();
+  };
+  const reveal = () => {
+    const win = currentWindow();
+    if (win) showWindow(win);
+    else windows.ensure();
+  };
 
   app.on("window-all-closed", () => {
-    if (platform !== "darwin") app.quit();
+    if (!isMac) app.quit();
   });
   app.on("activate", () => {
-    if (started) windows.ensure();
+    if (!started) return;
+    if (isMac) reveal();
+    else windows.ensure();
   });
 
+  if (isMac) {
+    app.on("before-quit", () => {
+      isQuitting = true;
+    });
+  }
+
   await resolvePath();
-  windows.ensure();
+  const initialWindow = windows.ensure();
+
+  if (isMac) {
+    initialWindow.on("close", (event) => {
+      if (isQuitting) return;
+      event.preventDefault();
+      initialWindow.hide();
+    });
+
+    if (Tray && Menu && nativeImage) {
+      const tray = new Tray(nativeImage.createEmpty());
+      // Temporary asset (grill D7): no image is committed yet, so the tray is an
+      // empty native image with an emoji title. A designed monochrome template
+      // image can replace this later without touching this wiring.
+      tray.setTitle("🐙");
+      tray.on("click", () => {
+        const win = currentWindow();
+        if (!win) {
+          windows.ensure();
+          return;
+        }
+        if (win.isVisible()) win.hide();
+        else showWindow(win);
+      });
+      tray.setContextMenu(
+        Menu.buildFromTemplate([
+          { label: "Show Tentacles", click: () => reveal() },
+          { label: "Quit Tentacles", click: () => app.quit() },
+        ])
+      );
+    }
+  }
+
   started = true;
   return windows;
 }
