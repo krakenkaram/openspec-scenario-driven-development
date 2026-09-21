@@ -19,6 +19,9 @@ import os from "node:os";
 import type {
   Apply,
   ArchiveResult,
+  ArchiveExecuteResult,
+  TeardownAcceptances,
+  TeardownPlan,
   Change,
   DiffFile,
   DiffHunk,
@@ -924,6 +927,196 @@ export async function archiveChange(
   return archiver(repoPath, change);
 }
 
+// ---------------------------------------------------------------------------
+// Worktree teardown: archiving the last live Change in a linked worktree removes
+// the worktree and deletes its branch. Split into a pure `planTeardown` (decides
+// what teardown would do, over injected git output) and `executeArchiveWithTeardown`
+// (archive-first, then remove + delete, reporting each step). The git side effects
+// live behind the injectable `TeardownGit` so the decision logic and the
+// partial-failure paths are testable without a real repo.
+// ---------------------------------------------------------------------------
+
+export interface TeardownGit {
+  isMerged(repoPath: string, branch: string): Promise<boolean>;
+  isDirty(repoPath: string): Promise<boolean>;
+  removeWorktree(runFrom: string, worktreePath: string, force: boolean): Promise<string | null>;
+  deleteBranch(runFrom: string, branch: string, force: boolean): Promise<string | null>;
+}
+
+export interface TeardownDeps {
+  archiver?: Archiver;
+  git?: TeardownGit;
+}
+
+// A git step that reports its failure: null on success, otherwise the trimmed
+// stderr. Argv-only, no shell (see branchCommits), so a branch/worktree name can
+// never be interpreted as a command.
+function runGitStep(cwd: string, args: string[]): Promise<string | null> {
+  return new Promise((res) => {
+    execFile("git", ["-C", cwd, ...args], { timeout: 8000, maxBuffer: 8 * 1024 * 1024 }, (err, _out, stderr) => {
+      if (err) return res((String(stderr) || String(err)).trim().slice(0, 400) || "git failed");
+      res(null);
+    });
+  });
+}
+
+// True when `branch` is already contained in the repository's base branch, using
+// the same base candidates the branch diff's fork point uses. A merged branch is
+// safe to delete with `git branch -d`; an unmerged one needs the force delete and
+// the user's acceptance.
+async function branchMergedInto(repoPath: string, branch: string): Promise<boolean> {
+  for (const base of ["origin/HEAD", "main", "master"]) {
+    const verified = await runGit(["rev-parse", "--verify", "--quiet", base], repoPath);
+    if (verified === null || verified === "") continue;
+    const ancestor = await runGit(["merge-base", "--is-ancestor", branch, base], repoPath);
+    if (ancestor !== null) return true;
+  }
+  return false;
+}
+
+const realTeardownGit: TeardownGit = {
+  isMerged: (repoPath, branch) => branchMergedInto(repoPath, branch),
+  isDirty: async (repoPath) => {
+    const out = await runGit(["status", "--porcelain"], repoPath);
+    return !!(out && out.trim().length > 0);
+  },
+  removeWorktree: (runFrom, worktreePath, force) =>
+    runGitStep(runFrom, ["worktree", "remove", ...(force ? ["--force"] : []), worktreePath]),
+  deleteBranch: (runFrom, branch, force) => runGitStep(runFrom, ["branch", force ? "-D" : "-d", branch]),
+};
+
+// Decide what archiving `change` would do to its worktree. `applies` is true only
+// when it is the last live Change in a linked (non-primary) worktree; otherwise
+// `keptReason` explains why the worktree stays. Only an eligible plan probes branch
+// merge state and working-tree dirtiness (and builds the warnings), so the primary /
+// not-last paths do no git work beyond identity resolution.
+export async function planTeardown(
+  args: Args,
+  repoPath: string,
+  change: string,
+  git: TeardownGit = realTeardownGit
+): Promise<TeardownPlan> {
+  const worktreePath = path.resolve(repoPath);
+  const id = await resolveGitIdentity(repoPath);
+  const branch = id.branch;
+  const base: TeardownPlan = {
+    applies: false,
+    isPrimary: id.isPrimary,
+    worktreePath,
+    branch,
+    branchMerged: false,
+    dirty: false,
+    warnings: [],
+  };
+
+  const otherLive = listChanges(repoPath).filter((c) => c !== change);
+  if (otherLive.length > 0) return { ...base, keptReason: "not-last" };
+  if (id.isPrimary) return { ...base, keptReason: "primary" };
+
+  const [branchMerged, dirty] = await Promise.all([
+    branch ? git.isMerged(repoPath, branch) : Promise.resolve(false),
+    git.isDirty(repoPath),
+  ]);
+
+  const warnings: string[] = [
+    `"${change}" is the last change in this worktree — the worktree will be removed.`,
+  ];
+  if (branch && !branchMerged) {
+    warnings.push(`Branch "${branch}" is not merged; deleting it will lose its unmerged commits.`);
+  }
+  if (dirty) {
+    warnings.push("Uncommitted or untracked changes in the worktree will be lost.");
+  }
+
+  return { ...base, applies: true, branch, branchMerged, dirty, warnings };
+}
+
+// Archive `change` and, when its worktree is eligible for teardown, remove the
+// worktree and delete its branch — in a fixed order (archive → remove → delete) with
+// no rollback. Re-derives the plan server-side so a stale renderer cannot force an
+// unwarranted removal; the acceptances only permit a forced step. Returns a per-step
+// outcome so the caller can report exactly what happened.
+export async function executeArchiveWithTeardown(
+  args: Args,
+  repoPath: string,
+  change: string,
+  acceptances: TeardownAcceptances,
+  deps: TeardownDeps = {}
+): Promise<ArchiveExecuteResult> {
+  const archiver = deps.archiver ?? runArchive;
+  const git = deps.git ?? realTeardownGit;
+
+  const repos = discoverRepos(args);
+  const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
+  if (!okRepo || !change || !listChanges(repoPath).includes(change)) {
+    return { archived: false, archiveError: "unknown repo or change", worktreeRemoved: null, branchDeleted: null };
+  }
+
+  const plan = await planTeardown(args, repoPath, change, git);
+
+  // Archive first; if it fails, attempt nothing else.
+  const archived = await archiver(repoPath, change);
+  if (!archived.ok) {
+    return {
+      archived: false,
+      archiveError: archived.error,
+      worktreeRemoved: null,
+      branchDeleted: null,
+      keptReason: plan.keptReason,
+    };
+  }
+
+  // A plain archive (primary or not-last): the worktree stays, nothing else to do.
+  if (!plan.applies) {
+    return { archived: true, worktreeRemoved: null, branchDeleted: null, keptReason: plan.keptReason };
+  }
+
+  const runFrom = worktreeRunFrom(await resolveGitIdentity(repoPath), repoPath);
+
+  // Dirty guard: a dirty worktree is only force-removed on acceptance.
+  if (plan.dirty && !acceptances.acceptDirty) {
+    return {
+      archived: true,
+      worktreeRemoved: false,
+      worktreeError: "skipped: uncommitted changes not accepted",
+      branchDeleted: null,
+    };
+  }
+
+  const worktreeError = await git.removeWorktree(runFrom, plan.worktreePath, plan.dirty && acceptances.acceptDirty);
+  if (worktreeError) {
+    // Archive stands; report the failure and do not touch the branch.
+    return { archived: true, worktreeRemoved: false, worktreeError, branchDeleted: null };
+  }
+
+  if (!plan.branch) {
+    return { archived: true, worktreeRemoved: true, branchDeleted: null };
+  }
+
+  // Unmerged guard: an unmerged branch is only force-deleted on acceptance.
+  if (!plan.branchMerged && !acceptances.acceptUnmerged) {
+    return {
+      archived: true,
+      worktreeRemoved: true,
+      branchDeleted: false,
+      branchError: "skipped: unmerged branch not accepted",
+    };
+  }
+
+  const branchError = await git.deleteBranch(runFrom, plan.branch, !plan.branchMerged);
+  if (branchError) {
+    return { archived: true, worktreeRemoved: true, branchDeleted: false, branchError };
+  }
+  return { archived: true, worktreeRemoved: true, branchDeleted: true };
+}
+
+// `git worktree remove` cannot run from inside the worktree being removed, so it
+// runs from the primary checkout — the common-dir's parent — falling back to the
+// worktree path for a standalone (non-linked) directory.
+function worktreeRunFrom(id: GitIdentity, repoPath: string): string {
+  return id.commonDir ? path.dirname(id.commonDir) : path.resolve(repoPath);
+}
+
 // Guarded read: only a path resolving inside a currently-discovered repo.
 export function readArtifact(args: Args, fp: string): ReadFileResult {
   const repos = discoverRepos(args);
@@ -1283,6 +1476,8 @@ export default {
   collect,
   getStatus,
   archiveChange,
+  planTeardown,
+  executeArchiveWithTeardown,
   readArtifact,
   openWorktree,
   openRepoFile,
