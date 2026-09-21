@@ -53,6 +53,26 @@ describe("secure window creation", () => {
     expect(seen[0]?.show).toBe(true);
   });
 
+  it("opens the window at the wider default size (1440 x 860)", () => {
+    const seen: Array<{ width?: unknown; height?: unknown }> = [];
+    class FakeBrowserWindow {
+      loadFile = vi.fn();
+      webContents = { setWindowOpenHandler: vi.fn() };
+      constructor(opts: { width?: unknown; height?: unknown }) {
+        seen.push(opts);
+      }
+    }
+
+    createWindow(FakeBrowserWindow as unknown as typeof BrowserWindow, {
+      preloadPath: "/p/preload.js",
+      indexPath: "/i/index.html",
+      openExternal: vi.fn(),
+    });
+
+    expect(seen[0]?.width).toBe(1440);
+    expect(seen[0]?.height).toBe(860);
+  });
+
   it("creates a hidden window when show is false (e2e: no focus-stealing window)", () => {
     const seen: Array<{ show?: unknown }> = [];
     class FakeBrowserWindow {

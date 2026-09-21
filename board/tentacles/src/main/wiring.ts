@@ -343,7 +343,7 @@ export function makeWindowOpenHandler(
 
 export function createWindow(BrowserWindowCtor: typeof BrowserWindow, { preloadPath, indexPath, openExternal, show }: WindowOpts): BrowserWindow {
   const win = new BrowserWindowCtor({
-    width: 1200,
+    width: 1440,
     height: 860,
     backgroundColor: "#0a0e1a",
     show: show !== false,
