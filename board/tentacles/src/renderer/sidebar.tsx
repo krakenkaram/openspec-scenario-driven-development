@@ -112,6 +112,7 @@ export function Sidebar({
   groups,
   expanded,
   selection,
+  width,
   onToggle,
   onSelectRepo,
   onSelectWorktree,
@@ -119,12 +120,13 @@ export function Sidebar({
   groups: RepositoryGroup[];
   expanded: Set<string>;
   selection: Selection;
+  width: number;
   onToggle: (repositoryId: string) => void;
   onSelectRepo: (repositoryId: string) => void;
   onSelectWorktree: (repoPath: string) => void;
 }) {
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ width, flex: "0 0 auto" }}>
       {groups.map((g) => (
         <SidebarRepo
           key={g.repositoryId}

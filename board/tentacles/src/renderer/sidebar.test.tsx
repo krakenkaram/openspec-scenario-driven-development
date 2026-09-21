@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, within, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { makeChange, makeStatus, mockApi, phase } from "./test-fixtures";
@@ -290,3 +290,36 @@ function waitForLeaf(): Promise<HTMLElement> {
     return el as HTMLElement;
   });
 }
+
+describe("the sidebar width is draggable within bounds", () => {
+  function drag(fromX: number, toX: number) {
+    const handle = document.querySelector(".sb-resize") as HTMLElement;
+    expect(handle).not.toBeNull();
+    fireEvent.mouseDown(handle, { clientX: fromX });
+    fireEvent.mouseMove(window, { clientX: toX });
+    fireEvent.mouseUp(window, { clientX: toX });
+  }
+
+  it("widens the sidebar when the handle is dragged to the right", async () => {
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
+    render(<App />);
+    await screen.findByText("wings-core");
+    const sidebar = document.querySelector(".sidebar") as HTMLElement;
+
+    const before = parseInt(sidebar.style.width, 10);
+    expect(before).toBe(264);
+
+    drag(0, 120);
+    expect(parseInt(sidebar.style.width, 10)).toBe(384);
+  });
+
+  it("clamps the sidebar at its 180px minimum on a large leftward drag", async () => {
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
+    render(<App />);
+    await screen.findByText("wings-core");
+    const sidebar = document.querySelector(".sidebar") as HTMLElement;
+
+    drag(0, -500);
+    expect(parseInt(sidebar.style.width, 10)).toBe(180);
+  });
+});

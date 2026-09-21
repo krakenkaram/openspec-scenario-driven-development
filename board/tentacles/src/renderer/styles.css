@@ -209,7 +209,9 @@ html[data-theme="light"] {
 /* Repository → worktree sidebar + selection-scoped main layout */
 .layout { display:flex; align-items:stretch; min-height:calc(100vh - 62px); }
 .layout main { flex:1; min-width:0; max-width:none; margin:0; overflow:auto; }
-.sidebar { flex:0 0 264px; border-right:1px solid var(--border); background:var(--surface); overflow:auto; padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
+.sidebar { border-right:1px solid var(--border); background:var(--surface); overflow:auto; padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
+.sb-resize { flex:0 0 5px; cursor:col-resize; background:var(--border); opacity:.5; }
+.sb-resize:hover { opacity:1; background:var(--accent); }
 .sb-repo { display:flex; flex-direction:column; }
 .sb-repo-row { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; cursor:pointer; user-select:none; }
 .sb-repo-row:hover { background:color-mix(in srgb,var(--fg) 6%,transparent); }
