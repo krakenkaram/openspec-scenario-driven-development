@@ -76,3 +76,76 @@ describe("archive with worktree teardown — single informed confirmation", () =
     await waitFor(() => expect(screen.queryByText("tear-me")).toBeNull());
   });
 });
+
+describe("archive with worktree teardown — primary reason and partial outcomes", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    selectRepo();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("tells the user the primary worktree is kept because it is the primary checkout", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const c = makeChange({ change: "last-prim", repoPath: "/Code/repo-a" });
+    const primaryPlan: TeardownPlan = {
+      applies: false,
+      keptReason: "primary",
+      isPrimary: true,
+      worktreePath: "/Code/repo-a",
+      branch: "master",
+      branchMerged: true,
+      dirty: false,
+      warnings: [],
+    };
+    const api = mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([c])),
+      archivePlan: vi.fn().mockResolvedValue(primaryPlan),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("last-prim");
+    await user.click(screen.getByText("Archive"));
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
+    expect(String(confirmSpy.mock.calls[0]?.[0])).toMatch(/primary checkout/i);
+    // Plain archive path (the worktree is kept), never the teardown execute.
+    await waitFor(() => expect(api.archive).toHaveBeenCalledWith({ repoPath: "/Code/repo-a", change: "last-prim" }));
+    expect(api.archiveExecute).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a replanned branch-not-deleted outcome instead of reporting silent success", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const c = makeChange({ change: "tear-me", repoPath: "/Code/repo-a" });
+    // Plan shown as merged (so the renderer sends acceptUnmerged:false)...
+    const plan: TeardownPlan = {
+      applies: true,
+      isPrimary: false,
+      worktreePath: "/Code/repo-a-wt",
+      branch: "feat/z",
+      branchMerged: true,
+      dirty: false,
+      warnings: ['"tear-me" is the last change in this worktree — the worktree will be removed.'],
+    };
+    const api = mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([c])),
+      archivePlan: vi.fn().mockResolvedValue(plan),
+      // ...but the execute-time replan found it unmerged and safely kept the branch.
+      archiveExecute: vi.fn().mockResolvedValue({
+        archived: true,
+        worktreeRemoved: true,
+        branchDeleted: false,
+        branchError: "skipped: unmerged branch not accepted",
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("tear-me");
+    await user.click(screen.getByText("Archive"));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(String(alertSpy.mock.calls[0]?.[0])).toMatch(/branch was not deleted/i);
+  });
+});
