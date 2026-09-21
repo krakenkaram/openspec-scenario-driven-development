@@ -49,6 +49,8 @@ export type MockApi = {
   chooseDirectory: ReturnType<typeof vi.fn>;
   openPath: ReturnType<typeof vi.fn>;
   onNotificationSound: ReturnType<typeof vi.fn>;
+  install: ReturnType<typeof vi.fn>;
+  doctor: ReturnType<typeof vi.fn>;
 };
 
 export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
@@ -58,11 +60,13 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     getDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
     getFileDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
     archive: vi.fn().mockResolvedValue({ ok: true }),
-    getSettings: vi.fn().mockResolvedValue({ root: "/Code", notifications: "enabled" }),
-    setSettings: vi.fn().mockResolvedValue({ ok: true, root: "/Code", notifications: "enabled" }),
+    getSettings: vi.fn().mockResolvedValue({ root: "/Code", notifications: "enabled", targets: [] }),
+    setSettings: vi.fn().mockResolvedValue({ ok: true, root: "/Code", notifications: "enabled", targets: [] }),
     chooseDirectory: vi.fn().mockResolvedValue({ path: null }),
     openPath: vi.fn().mockResolvedValue({ ok: true }),
     onNotificationSound: vi.fn().mockReturnValue(() => {}),
+    install: vi.fn().mockResolvedValue({ steps: [] }),
+    doctor: vi.fn().mockResolvedValue({ checks: [] }),
     ...over,
   } as unknown as MockApi;
   (window as unknown as { electronAPI: ElectronAPI }).electronAPI = api as unknown as ElectronAPI;

@@ -8,16 +8,20 @@ terminal and no localhost port.
 ## Architecture
 
 IPC-native — there is **no HTTP server**. The Electron main process invokes the
-board logic directly and exposes it to the renderer over three named IPC channels
+board logic directly and exposes it to the renderer over eleven named IPC channels
 through a minimal preload bridge:
 
 | File | Role |
 | --- | --- |
 | `main.js` | Electron entry: resolves the login-shell PATH, registers IPC, creates the window, wires lifecycle. |
 | `wiring.js` | Pure, testable wiring (IPC handler factories, secure window, lifecycle, PATH resolution). Takes Electron objects as parameters so tests need no Electron. |
-| `core.js` | The board scan/status/archive/file logic. |
-| `preload.js` | `contextBridge` exposing exactly `getStatus` / `readFile` / `archive`. |
+| `core.js` | The board scan/status/archive/file logic, plus the pure setup install-planner / doctor-checker. |
+| `preload.js` | `contextBridge` exposing exactly `getStatus` / `readFile` / `getDiff` / `getFileDiff` / `archive` / `getSettings` / `setSettings` / `chooseDirectory` / `openPath` / `install` / `doctor`. |
 | `index.html` | The board UI (copied from `board/index.html`; the three data calls swapped to the bridge and the legacy HTTP-only `file://` guard block removed). |
+
+The `install` / `doctor` channels back the Settings **Setup** tab (configure the
+machine for Claude / Kiro / Kiro Crew, verify, repair) — see
+`docs/adr/0005-settings-tool-ipc-channels.md`.
 
 The renderer runs with secure defaults (`contextIsolation: true`,
 `nodeIntegration: false`, `sandbox: true`) — see `docs/adr/0002-secure-renderer-defaults.md`.
@@ -66,7 +70,9 @@ requires right-click → Open (once). Code signing + notarization is future scop
 
 ## Scope
 
-Scans the defaults (`~/Code`, depth 30) with no in-app settings. Notifications,
-tray/menu-bar, native open-in-editor, an in-app root/depth picker, and signing
-are all future scope. (The Playwright-Electron E2E harness — `npm run e2e` — is
-now shipped; see the pre-ship smoke gate above.)
+Scans `~/Code` (depth 30) by default, overridable from the in-app **Settings**
+(a General tab with a scan-root picker and notification controls, and a **Setup**
+tab that installs and diagnoses the atdd-driven workflow for Claude / Kiro / Kiro
+Crew). Tray/menu-bar, native open-in-editor, and code signing / notarization are
+still future scope. (The Playwright-Electron E2E harness — `npm run e2e` — is now
+shipped; see the pre-ship smoke gate above.)
