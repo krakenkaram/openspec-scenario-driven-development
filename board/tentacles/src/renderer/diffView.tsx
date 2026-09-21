@@ -8,6 +8,13 @@ function FileLines({ file }: { file: DiffFile }) {
     <>
       {file.hunks.map((h, hi) => (
         <div className="diff-hunk" key={hi}>
+          {hi > 0 && h.oldStart !== undefined && (
+            <div className="diff-line diff-hunk-header" key="header">
+              <span className="diff-gutter diff-gutter-old" style={{ userSelect: "none" }} />
+              <span className="diff-gutter diff-gutter-new" style={{ userSelect: "none" }} />
+              <span className="diff-text">{`@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@`}</span>
+            </div>
+          )}
           {h.lines.map((l, li) => {
             const html = highlightLine(l.text, language);
             return (

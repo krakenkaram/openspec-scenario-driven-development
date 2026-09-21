@@ -155,6 +155,8 @@ main { padding:20px 24px 60px; max-width:1200px; margin:0 auto; }
 .diff-line.del { background:color-mix(in srgb,#f87171 14%,transparent); }
 .diff-line.del .diff-sign { color:#f87171; }
 .diff-line.context { color:var(--fg); }
+.diff-hunk-header { color:var(--muted); background:color-mix(in srgb,var(--fg) 5%,transparent); user-select:none; }
+.diff-hunk-header .diff-text { color:var(--muted); opacity:.8; }
 
 /* Syntax highlighting tokens (highlight.js). Colours read from theme-aware vars
    so the same tokens work under dark and light; add/del lines keep their tint as
