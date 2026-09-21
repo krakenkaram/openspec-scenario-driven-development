@@ -66,6 +66,7 @@ function makeFakeTray() {
     setContextMenu(m: unknown) {
       this.contextMenu = m;
     }
+    destroy = vi.fn();
     on(ev: string, fn: (...a: unknown[]) => void) {
       this.listeners[ev] = fn;
     }
@@ -201,6 +202,24 @@ describe("bootstrap startup coordinator", () => {
     });
     app.emit("window-all-closed");
     expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prevent or hide window close on non-darwin platforms", async () => {
+    const app = fakeApp();
+    const { FakeBrowserWindow, instances } = makeFakeBrowserWindow();
+    await bootstrap({
+      ...deps({ platform: "linux" }),
+      app: app as unknown as App,
+      BrowserWindow: FakeBrowserWindow as unknown as typeof BrowserWindow,
+      ipcMain: { handle() {} } as unknown as IpcMain,
+    });
+
+    const win = instances[0];
+    const event = { preventDefault: vi.fn() };
+    win.fire("close", event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(win.hide).not.toHaveBeenCalled();
   });
 });
 
@@ -353,5 +372,23 @@ describe("macOS minimise-on-close-to-tray wiring", () => {
 
     template.find((i) => i.label === "Quit Tentacles")?.click?.();
     expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroys the tray on before-quit (darwin)", async () => {
+    const app = fakeApp();
+    const { FakeBrowserWindow } = makeFakeBrowserWindow();
+    const tray = makeFakeTray();
+    const menu = makeFakeMenu();
+    await bootstrap({
+      ...deps({ platform: "darwin" }),
+      app: app as unknown as App,
+      BrowserWindow: FakeBrowserWindow as unknown as typeof BrowserWindow,
+      ipcMain: { handle() {} } as unknown as IpcMain,
+      ...trayDeps(tray, menu),
+    });
+
+    app.emit("before-quit");
+
+    expect(tray.instances[0].destroy).toHaveBeenCalledTimes(1);
   });
 });

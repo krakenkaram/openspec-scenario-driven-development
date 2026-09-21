@@ -422,11 +422,10 @@ export async function bootstrap({
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
   const isMac = platform === "darwin";
   let started = false;
-  // On macOS 'x' hides the window rather than destroying it, so the app stays
-  // resident. `isQuitting` is set on `before-quit` (fired by Cmd+Q, Dock → Quit,
-  // the app menu, and the tray's Quit) so an explicit quit is allowed through
-  // while an ordinary close only hides.
   let isQuitting = false;
+  // Retained for the app lifetime via the before-quit closure below; Electron
+  // garbage-collects a Tray held only in local scope, dropping the icon.
+  let tray: import("electron").Tray | undefined;
 
   const currentWindow = (): BrowserWindow | undefined => {
     const open = BrowserWindowCtor.getAllWindows ? BrowserWindowCtor.getAllWindows() : [];
@@ -454,6 +453,7 @@ export async function bootstrap({
   if (isMac) {
     app.on("before-quit", () => {
       isQuitting = true;
+      tray?.destroy();
     });
   }
 
@@ -468,10 +468,7 @@ export async function bootstrap({
     });
 
     if (Tray && Menu && nativeImage) {
-      const tray = new Tray(nativeImage.createEmpty());
-      // Temporary asset (grill D7): no image is committed yet, so the tray is an
-      // empty native image with an emoji title. A designed monochrome template
-      // image can replace this later without touching this wiring.
+      tray = new Tray(nativeImage.createEmpty());
       tray.setTitle("🐙");
       tray.on("click", () => {
         const win = currentWindow();

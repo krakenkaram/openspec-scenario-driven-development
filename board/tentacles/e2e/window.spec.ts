@@ -29,37 +29,33 @@ test.describe("single secure window", () => {
   });
 });
 
-// minimise-on-close-to-tray: on macOS, 'x' hides the window (keeps it alive)
-// rather than destroying it, and reopening (Dock activate) re-shows the same
-// window. Asserted through the real Electron seam per ADR-0003. These drive the
-// window-lifecycle capability's two e2e scenarios.
 test.describe("close-to-hide window lifecycle (macOS)", () => {
   test("closing the window hides it instead of destroying it", async ({ app }) => {
     const state = await app.electronApp.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       win?.show();
-      win?.close(); // 'x' — the close handler must preventDefault + hide, not destroy
+      win?.close();
       return {
         count: BrowserWindow.getAllWindows().length,
         visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
       };
     });
-    expect(state.count).toBe(1); // still alive — not destroyed
-    expect(state.visible).toBe(false); // hidden
+    expect(state.count).toBe(1);
+    expect(state.visible).toBe(false);
   });
 
   test("Dock activation re-shows and focuses the existing hidden window", async ({ app }) => {
     const state = await app.electronApp.evaluate(({ app: electronApp, BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       win?.show();
-      win?.close(); // hide it first
-      electronApp.emit("activate"); // Dock click
+      win?.close();
+      electronApp.emit("activate");
       return {
         count: BrowserWindow.getAllWindows().length,
         visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
       };
     });
-    expect(state.count).toBe(1); // no second window created
-    expect(state.visible).toBe(true); // re-shown
+    expect(state.count).toBe(1);
+    expect(state.visible).toBe(true);
   });
 });
