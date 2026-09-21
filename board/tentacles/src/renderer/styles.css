@@ -209,6 +209,14 @@ html[data-theme="light"] {
 .setup-results .row-label { color:var(--fg); }
 .setup-results .row-reason { color:var(--muted); font-size:0.76rem; }
 .setup-results .row-fail .row-label { color:#f87171; }
+/* Read-only available-schemas reference (Settings → Schemas) */
+.schemas-panel { display:flex; flex-direction:column; gap:10px; }
+.schemas-empty { font-size:0.82rem; color:var(--muted); }
+.schema-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.schema-item { border:1px solid var(--border); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:4px; }
+.schema-name { font-weight:600; color:var(--fg); }
+.schema-desc { font-size:0.8rem; color:var(--muted); }
+.schema-steps { font-size:0.8rem; color:var(--fg); font-family:var(--mono,monospace); }
 /* Repository → worktree sidebar + selection-scoped main layout */
 .layout { display:flex; align-items:stretch; min-height:calc(100vh - 62px); }
 .layout main { flex:1; min-width:0; max-width:none; margin:0; overflow:auto; }

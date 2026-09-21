@@ -43,6 +43,7 @@ import type {
   OpenPathResult,
   ReadFileResult,
   ResultRow,
+  SchemaInfo,
   SetSettingsArgs,
   SetSettingsResult,
   StatusResult,
@@ -65,6 +66,7 @@ export const IPC: ChannelMap = {
   openFile: "board:openFile",
   install: "board:install",
   doctor: "board:doctor",
+  listSchemas: "board:listSchemas",
 };
 
 // The subset of core the handlers depend on.
@@ -76,6 +78,7 @@ export interface BoardCore {
   archiveChange(args: Args, repoPath: string, change: string): Promise<ArchiveResult>;
   openWorktree(args: Args, target: string, opener: OpenPath): Promise<OpenPathResult>;
   openRepoFile(args: Args, repoPath: string, filePath: string, opener: OpenPath): Promise<OpenPathResult>;
+  listSchemas(): Promise<SchemaInfo[]>;
 }
 
 export interface WindowOpts {
@@ -244,6 +247,7 @@ export function makeHandlers(
       if (!openPath) return { ok: false, error: "open unavailable" };
       return core.openRepoFile(getArgs(), repoPath, filePath, openPath);
     },
+    listSchemas: (): Promise<SchemaInfo[]> => core.listSchemas(),
   };
 }
 
@@ -275,6 +279,7 @@ export function registerIpc(
   ipcMain.handle(IPC.openFile, handlers.openFile);
   ipcMain.handle(IPC.install, handlers.install);
   ipcMain.handle(IPC.doctor, handlers.doctor);
+  ipcMain.handle(IPC.listSchemas, handlers.listSchemas);
   return handlers;
 }
 

@@ -157,6 +157,25 @@ export function runStatus(repo: string, change: string): Promise<RawStatus | nul
   });
 }
 
+// The available OpenSpec schemas as reported by `openspec schemas --json`,
+// parsed into SchemaInfo[]. Runs from the board process cwd (the checkout the
+// app was launched from), so project + package/user schemas are all listed. A
+// failed/empty CLI call yields [] via parseSchemas — the Settings view then
+// simply shows no schemas rather than erroring.
+export function listSchemas(): Promise<SchemaInfo[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "openspec",
+      ["schemas", "--json"],
+      { timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err && !stdout) return resolve([]);
+        resolve(parseSchemas(String(stdout)));
+      }
+    );
+  });
+}
+
 export function runArchive(repo: string, change: string): Promise<ArchiveResult> {
   return new Promise((resolve) => {
     execFile(
@@ -1290,6 +1309,7 @@ export default {
   listChanges,
   runStatus,
   runArchive,
+  listSchemas,
   taskProgress,
   changeType,
   prForBranch,

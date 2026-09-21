@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's twelve
+// Type-only IPC contract: the single source of truth for the board's thirteen
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -190,6 +190,7 @@ export interface ChannelMap {
   openFile: "board:openFile";
   install: "board:install";
   doctor: "board:doctor";
+  listSchemas: "board:listSchemas";
 }
 
 export type Channel = ChannelMap[keyof ChannelMap];
@@ -223,4 +224,7 @@ export interface ElectronAPI {
   onNotificationSound(handler: () => void): () => void;
   install(payload: InstallArgs): Promise<InstallResult>;
   doctor(payload: DoctorArgs): Promise<DoctorResult>;
+  // The available OpenSpec schemas (name, description, ordered steps), for the
+  // read-only Schemas reference in Settings.
+  listSchemas(): Promise<SchemaInfo[]>;
 }
