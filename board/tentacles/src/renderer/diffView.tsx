@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { highlightLine, languageForPath } from "./highlight";
 
@@ -118,13 +118,38 @@ function DirLevel({
 export function DiffView({
   result,
   getFullFile,
+  onOpenFile,
 }: {
   result: DiffResult | null;
   getFullFile: (filePath: string) => Promise<DiffFile | null>;
+  onOpenFile?: (filePath: string) => void;
 }) {
   const [selected, setSelected] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [fullByPath, setFullByPath] = useState<Record<string, DiffFile>>({});
+  const [treeWidth, setTreeWidth] = useState(240);
+  const layoutRef = useRef<HTMLDivElement>(null);
+
+  // Drag the handle between the file tree and the diff pane to resize the tree.
+  // Bounds: min 160px (never collapse) and max ~60% of the panel (never squeeze
+  // the diff away); when the panel width can't be measured the max is unbounded.
+  // Not persisted — resets to the default each launch.
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = treeWidth;
+    const onMove = (ev: MouseEvent) => {
+      const panel = layoutRef.current?.clientWidth ?? 0;
+      const maxW = panel > 0 ? Math.round(panel * 0.6) : Number.POSITIVE_INFINITY;
+      setTreeWidth(Math.max(160, Math.min(startW + (ev.clientX - startX), maxW)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   // When the live diff refreshes (the inline panel re-polls every 3s), re-fetch
   // the full contents of any expanded file so the expanded view stays live rather
@@ -181,15 +206,32 @@ export function DiffView({
   const isExpanded = current ? expanded.has(current.path) : false;
   const shown = current && isExpanded && fullByPath[current.path] ? fullByPath[current.path] : current;
   return (
-    <div className="diff-layout">
-      <nav className="diff-sidebar">
+    <div className="diff-layout" ref={layoutRef}>
+      <nav className="diff-sidebar" style={{ width: treeWidth, flex: "0 0 auto" }}>
         <DirLevel node={buildTree(files)} depth={0} sel={sel} onSelect={setSelected} />
       </nav>
+      <div
+        className="diff-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize file list"
+        onMouseDown={startResize}
+      />
       <div className="diff-pane">
         {current && (
           <div className="diff-file-head">
             <span className={`diff-status ${current.status}`}>{current.status}</span>
-            <span className="diff-path">{current.path}</span>
+            {onOpenFile ? (
+              <button
+                className="diff-path diff-path-btn"
+                title={`Open ${current.path} in your editor`}
+                onClick={() => onOpenFile(current.path)}
+              >
+                {current.path}
+              </button>
+            ) : (
+              <span className="diff-path">{current.path}</span>
+            )}
             <button className="diff-expand" onClick={() => void toggleExpand(current.path)}>
               {isExpanded ? "Collapse" : "Expand full file"}
             </button>

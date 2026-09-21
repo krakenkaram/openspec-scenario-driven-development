@@ -323,10 +323,10 @@ describe("the inline diff lists files in a tree and can expand a file", () => {
     expect(dirLabels).toContain("main/");
     expect(dirLabels).toContain("docs/adr/0001-deep/");
 
-    const leaf = await screen.findByRole("button", { name: /core\.ts/ });
-    expect(leaf).toHaveAttribute("title", "src/main/core.ts");
+    const leaf = await screen.findByTitle("src/main/core.ts");
+    expect(leaf).toHaveClass("diff-file-item");
 
-    await user.click(screen.getByRole("button", { name: /app\.tsx/ }));
+    await user.click(screen.getByTitle("src/renderer/app.tsx"));
     expect(screen.getByText("B")).toBeTruthy();
     expect(screen.queryByText("A")).toBeNull();
   });
@@ -433,6 +433,56 @@ describe("the inline diff syntax-highlights code by language", () => {
 
     await screen.findByText("const answer = 42;");
     expect(document.querySelector(".diff-body .hljs-keyword")).toBeNull();
+  });
+});
+
+describe("clicking a diffed file name opens it in the OS-default app", () => {
+  it("calls openPath with the worktree-joined absolute path", async () => {
+    const api = mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [{ path: "src/x.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "y" }] }] }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await user.click(await screen.findByRole("button", { name: "src/x.ts" }));
+
+    expect(api.openPath).toHaveBeenCalledWith("/Code/repo-a/src/x.ts");
+  });
+});
+
+describe("the diff file-picker pane is drag-resizable", () => {
+  it("widens on drag and clamps at the minimum on an over-drag left", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [{ path: "a.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "A" }] }] }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+
+    const handle = await screen.findByRole("separator", { name: /resize file list/i });
+    const pane = document.querySelector(".diff-sidebar") as HTMLElement;
+
+    // drag right by 120px → wider
+    fireEvent.mouseDown(handle, { clientX: 300 });
+    fireEvent.mouseMove(document, { clientX: 420 });
+    fireEvent.mouseUp(document, { clientX: 420 });
+    expect(parseInt(pane.style.width, 10)).toBeGreaterThan(240);
+
+    // drag far left → clamps at the ~160px minimum, never collapses
+    fireEvent.mouseDown(handle, { clientX: 420 });
+    fireEvent.mouseMove(document, { clientX: 0 });
+    fireEvent.mouseUp(document, { clientX: 0 });
+    expect(parseInt(pane.style.width, 10)).toBe(160);
   });
 });
 

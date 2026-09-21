@@ -71,7 +71,11 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
         )}
       </div>
       <div className="diff-body">
-        <DiffView result={result} getFullFile={getFullFile} />
+        <DiffView
+          result={result}
+          getFullFile={getFullFile}
+          onOpenFile={(rel) => void window.electronAPI.openPath(`${repoPath}/${rel}`)}
+        />
       </div>
     </div>
   );

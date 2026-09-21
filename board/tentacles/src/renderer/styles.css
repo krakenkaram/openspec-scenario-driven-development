@@ -137,6 +137,10 @@ main { padding:20px 24px 60px; max-width:1200px; margin:0 auto; }
 .diff-path { font-weight:600; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .diff-expand { margin-left:auto; flex-shrink:0; border:1px solid var(--border); background:none; color:var(--muted); font-family:inherit; font-size:0.72rem; padding:2px 9px; border-radius:5px; cursor:pointer; }
 .diff-expand:hover { border-color:var(--accent); color:var(--accent); }
+.diff-resize { flex:0 0 5px; cursor:col-resize; background:var(--border); opacity:.5; }
+.diff-resize:hover { opacity:1; background:var(--accent); }
+.diff-path-btn { border:none; background:none; padding:0; margin:0; font:inherit; color:var(--fg); cursor:pointer; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.diff-path-btn:hover { color:var(--accent); text-decoration:underline; }
 .diff-status { text-transform:uppercase; font-size:0.66rem; letter-spacing:0.04em; padding:1px 6px; border-radius:4px; border:1px solid var(--border); color:var(--muted); }
 .diff-status.added { color:var(--done); border-color:var(--done); }
 .diff-status.deleted { color:#f87171; border-color:#f87171; }
