@@ -1,20 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { shapeChange, PHASES } from "./core";
+import { shapeChange } from "./core";
 import type { PhaseId } from "../shared/ipc-contract";
 
-// Builds an openspec status object where `present` lists the planning artifacts
-// that exist on disk. A non-existent repo path keeps shapeChange deterministic:
+// The atdd-driven planning artifacts, in declared order. Declared locally so the
+// tests are not coupled to core's fallback-constant name.
+const ATDD_PHASES: PhaseId[] = ["grill", "proposal", "specs", "design", "tasks"];
+
+const resolvedFor = (id: string): string =>
+  `/nope/openspec/changes/c/${id === "specs" ? "specs/cap/spec.md" : id + ".md"}`;
+
+// Builds an openspec status object over an arbitrary ordered set of artifact
+// `keys` (the change's schema artifacts). `present` lists the artifacts that
+// exist on disk. A non-existent repo path keeps shapeChange deterministic:
 // tasks.md/proposal.md reads fail (defaults), branch resolves null (no gh/git).
-function statusWith(present: PhaseId[], isPlanningComplete = false) {
+function statusWithKeys(keys: string[], present: string[], isPlanningComplete = false, schemaName = "atdd-driven") {
   const artifactPaths: Record<string, { existingOutputPaths: string[]; resolvedOutputPath: string }> = {};
-  for (const id of PHASES) {
-    const resolved = `/nope/openspec/changes/c/${id === "specs" ? "specs/cap/spec.md" : id + ".md"}`;
+  for (const id of keys) {
+    const resolved = resolvedFor(id);
     artifactPaths[id] = {
       existingOutputPaths: present.includes(id) ? [resolved] : [],
       resolvedOutputPath: resolved,
     };
   }
-  return { schemaName: "atdd-driven", isPlanningComplete, artifactPaths };
+  return { schemaName, isPlanningComplete, artifactPaths };
+}
+
+// The atdd-driven status: all five keys present in the artifactPaths map.
+function statusWith(present: PhaseId[], isPlanningComplete = false) {
+  return statusWithKeys(ATDD_PHASES, present, isPlanningComplete);
 }
 
 const byId = (phases: { id: PhaseId; done: boolean; inProgress?: boolean; fileExists: boolean }[]) =>
@@ -107,5 +120,45 @@ describe("shapeChange — a phase is complete when the next artifact exists", ()
     const c = await shapeChange("/nope/repo", "c", statusWith(["grill", "proposal"]));
     const proposal = c.phases.find((p) => p.id === "proposal");
     expect(proposal?.files).toEqual(["/nope/openspec/changes/c/proposal.md"]);
+  });
+});
+
+describe("shapeChange — phases are derived from the change's schema artifacts", () => {
+  it("renders exactly the atdd-driven five phases in declared order (regression)", async () => {
+    const c = await shapeChange("/nope/repo", "c", statusWith(["grill", "proposal"]));
+    expect(c.phases.map((p) => p.id)).toEqual(["grill", "proposal", "specs", "design", "tasks"]);
+  });
+
+  it("renders only a spec-driven change's own four phases, with no phantom grill", async () => {
+    const specDriven = statusWithKeys(
+      ["proposal", "specs", "design", "tasks"],
+      ["proposal"],
+      false,
+      "spec-driven"
+    );
+    const c = await shapeChange("/nope/repo", "c", specDriven);
+
+    expect(c.phases.map((p) => p.id)).toEqual(["proposal", "specs", "design", "tasks"]);
+    expect(c.phases.some((p) => p.id === "grill")).toBe(false);
+    // every derived phase is applicable by construction
+    expect(c.phases.every((p) => p.applicable)).toBe(true);
+  });
+
+  it("orders phases by the artifactPaths key order the CLI returns", async () => {
+    const status = statusWithKeys(["tasks", "design", "specs", "proposal"], [], false, "custom");
+    const c = await shapeChange("/nope/repo", "c", status);
+    expect(c.phases.map((p) => p.id)).toEqual(["tasks", "design", "specs", "proposal"]);
+  });
+});
+
+describe("shapeChange — falls back to the atdd-driven five when status is unusable", () => {
+  it("uses the five atdd-driven phases when status is null", async () => {
+    const c = await shapeChange("/nope/repo", "c", null);
+    expect(c.phases.map((p) => p.id)).toEqual(["grill", "proposal", "specs", "design", "tasks"]);
+  });
+
+  it("uses the five atdd-driven phases when artifactPaths is empty", async () => {
+    const c = await shapeChange("/nope/repo", "c", { schemaName: "spec-driven", isPlanningComplete: false, artifactPaths: {} });
+    expect(c.phases.map((p) => p.id)).toEqual(["grill", "proposal", "specs", "design", "tasks"]);
   });
 });

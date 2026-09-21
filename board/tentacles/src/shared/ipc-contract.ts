@@ -3,7 +3,10 @@
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
 
-export type PhaseId = "grill" | "proposal" | "specs" | "design" | "tasks";
+// A planning phase id. Open string, not a closed union: the set of phase ids is
+// defined per change by its schema's artifacts (from `openspec status`), so the
+// board derives them at runtime rather than hardcoding a fixed five. See ADR-0006.
+export type PhaseId = string;
 
 export interface Phase {
   id: PhaseId;

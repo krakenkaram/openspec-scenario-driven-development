@@ -62,7 +62,12 @@ interface RawPr {
   isDraft?: boolean;
 }
 
-export const PHASES: PhaseId[] = ["grill", "proposal", "specs", "design", "tasks"];
+// The atdd-driven planning artifacts, in declared order. Retained ONLY as the
+// fallback phase list for when `openspec status` yields no artifactPaths (a
+// failed status call), so the chain is never rendered blank. The authoritative
+// per-change phase list is derived from the change's own status artifactPaths
+// keys — see shapeChange.
+export const ATDD_FALLBACK_PHASES: PhaseId[] = ["grill", "proposal", "specs", "design", "tasks"];
 
 export const PRUNE = new Set([
   "node_modules", ".git", ".hg", ".svn", "dist", "build", "out", "target",
@@ -644,8 +649,14 @@ export async function shapeChange(
   // it marks grill done while grilling is still ongoing). The last applicable
   // planning phase has no successor, so it falls back to isPlanningComplete. See
   // ADR-0004.
-  const applicableIds = PHASES.filter((id) => id in artifactPaths);
-  const phases: Phase[] = PHASES.map((id) => {
+  // The change's planning phases come from its own schema, read as the ordered
+  // keys of the status artifactPaths (the CLI returns them in declared artifact
+  // order). Falls back to the atdd-driven five only when status yielded no keys,
+  // so the chain is never blank. See ADR-0006.
+  const derivedIds = Object.keys(artifactPaths);
+  const phaseIds: PhaseId[] = derivedIds.length ? derivedIds : ATDD_FALLBACK_PHASES;
+  const applicableIds = phaseIds.filter((id) => id in artifactPaths);
+  const phases: Phase[] = phaseIds.map((id) => {
     const ap = artifactPaths[id] || {};
     const existing = (ap.existingOutputPaths || []).filter(Boolean) as string[];
     const applicable = id in artifactPaths;
@@ -1239,7 +1250,8 @@ export function planDoctorChecks(targets: Target[], ctx: { home: string }): Doct
 }
 
 export default {
-  PHASES,
+  PHASES: ATDD_FALLBACK_PHASES,
+  ATDD_FALLBACK_PHASES,
   PRUNE,
   DEFAULT_DEPTH,
   defaultArgs,
