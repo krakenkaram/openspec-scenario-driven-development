@@ -28,3 +28,34 @@ test.describe("single secure window", () => {
     expect(visible).toBe(false);
   });
 });
+
+test.describe("close-to-hide window lifecycle (macOS)", () => {
+  test("closing the window hides it instead of destroying it", async ({ app }) => {
+    const state = await app.electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.show();
+      win?.close();
+      return {
+        count: BrowserWindow.getAllWindows().length,
+        visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
+      };
+    });
+    expect(state.count).toBe(1);
+    expect(state.visible).toBe(false);
+  });
+
+  test("Dock activation re-shows and focuses the existing hidden window", async ({ app }) => {
+    const state = await app.electronApp.evaluate(({ app: electronApp, BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.show();
+      win?.close();
+      electronApp.emit("activate");
+      return {
+        count: BrowserWindow.getAllWindows().length,
+        visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
+      };
+    });
+    expect(state.count).toBe(1);
+    expect(state.visible).toBe(true);
+  });
+});

@@ -73,6 +73,7 @@ requires right-click → Open (once). Code signing + notarization is future scop
 Scans `~/Code` (depth 30) by default, overridable from the in-app **Settings**
 (a General tab with a scan-root picker and notification controls, and a **Setup**
 tab that installs and diagnoses the atdd-driven workflow for Claude / Kiro / Kiro
-Crew). Tray/menu-bar and code signing / notarization are still future scope. (The
-Playwright-Electron E2E harness — `npm run e2e` — is now shipped; see the pre-ship
-smoke gate above.)
+Crew). On macOS the window minimises to a menu-bar tray on close (the app stays
+resident; the tray toggles the window and offers Show / Quit); code signing /
+notarization is still future scope. (The Playwright-Electron E2E harness —
+`npm run e2e` — is now shipped; see the pre-ship smoke gate above.)

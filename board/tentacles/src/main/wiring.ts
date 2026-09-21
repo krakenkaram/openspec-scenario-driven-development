@@ -389,6 +389,11 @@ export interface BootstrapDeps {
   chooseDirectory?: ChooseDirectory;
   openPath?: OpenPath;
   setup?: SetupDeps;
+  // macOS tray collaborators, injected so the wiring stays unit-testable with
+  // fakes. Supplied by main.ts on darwin; omitted on other platforms (no tray).
+  Tray?: typeof import("electron").Tray;
+  Menu?: typeof import("electron").Menu;
+  nativeImage?: typeof import("electron").nativeImage;
 }
 
 // Ordered startup coordinator. Registers IPC handlers BEFORE any window can call
@@ -409,20 +414,80 @@ export async function bootstrap({
   chooseDirectory,
   openPath,
   setup,
+  Tray,
+  Menu,
+  nativeImage,
 }: BootstrapDeps) {
   registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup);
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
+  const isMac = platform === "darwin";
   let started = false;
+  let isQuitting = false;
+  // Retained for the app lifetime via the before-quit closure below; Electron
+  // garbage-collects a Tray held only in local scope, dropping the icon.
+  let tray: import("electron").Tray | undefined;
+
+  const currentWindow = (): BrowserWindow | undefined => {
+    const open = BrowserWindowCtor.getAllWindows ? BrowserWindowCtor.getAllWindows() : [];
+    return open[0] as BrowserWindow | undefined;
+  };
+  const showWindow = (win: BrowserWindow) => {
+    win.show();
+    win.focus();
+  };
+  const reveal = () => {
+    const win = currentWindow();
+    if (win) showWindow(win);
+    else windows.ensure();
+  };
 
   app.on("window-all-closed", () => {
-    if (platform !== "darwin") app.quit();
+    if (!isMac) app.quit();
   });
   app.on("activate", () => {
-    if (started) windows.ensure();
+    if (!started) return;
+    if (isMac) reveal();
+    else windows.ensure();
   });
 
+  if (isMac) {
+    app.on("before-quit", () => {
+      isQuitting = true;
+      tray?.destroy();
+    });
+  }
+
   await resolvePath();
-  windows.ensure();
+  const initialWindow = windows.ensure();
+
+  if (isMac) {
+    initialWindow.on("close", (event) => {
+      if (isQuitting) return;
+      event.preventDefault();
+      initialWindow.hide();
+    });
+
+    if (Tray && Menu && nativeImage) {
+      tray = new Tray(nativeImage.createEmpty());
+      tray.setTitle("🐙");
+      tray.on("click", () => {
+        const win = currentWindow();
+        if (!win) {
+          windows.ensure();
+          return;
+        }
+        if (win.isVisible()) win.hide();
+        else showWindow(win);
+      });
+      tray.setContextMenu(
+        Menu.buildFromTemplate([
+          { label: "Show Tentacles", click: () => reveal() },
+          { label: "Quit Tentacles", click: () => app.quit() },
+        ])
+      );
+    }
+  }
+
   started = true;
   return windows;
 }
