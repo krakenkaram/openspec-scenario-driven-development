@@ -277,3 +277,114 @@ describe("diff modal can expand a file to its full contents with changes inline"
     expect(screen.getByText("changed")).toBeTruthy();
   });
 });
+
+describe("diff modal syntax-highlights code by language", () => {
+  it("tokenises a known language into highlight.js spans", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getDiff: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [
+          {
+            path: "src/core.ts",
+            status: "modified" as const,
+            hunks: [{ lines: [{ kind: "add" as const, text: "const answer = 42;" }] }],
+          },
+        ],
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("applying-demo");
+    await user.click(screen.getByTitle("View branch diff"));
+
+    const keyword = await waitFor(() => {
+      const el = document.querySelector(".diff-body .hljs-keyword");
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(keyword.textContent).toBe("const");
+    // the full line text is preserved intact despite being split into tokens
+    expect(document.querySelector(".diff-line.add")?.textContent).toContain("const answer = 42;");
+  });
+
+  it("renders an unknown extension as plain text without highlight spans", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getDiff: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [
+          {
+            path: "notes.txt",
+            status: "modified" as const,
+            hunks: [{ lines: [{ kind: "context" as const, text: "const answer = 42;" }] }],
+          },
+        ],
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("applying-demo");
+    await user.click(screen.getByTitle("View branch diff"));
+
+    await screen.findByText("const answer = 42;");
+    expect(document.querySelector(".diff-body .hljs-keyword")).toBeNull();
+  });
+});
+
+describe("diff modal sidebar is a hierarchical folder tree", () => {
+  const nested = {
+    ok: true as const,
+    files: [
+      { path: "src/main/core.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "A" }] }] },
+      { path: "src/renderer/app.tsx", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "B" }] }] },
+      { path: "docs/adr/0001-deep/thing.md", status: "added" as const, hunks: [{ lines: [{ kind: "add" as const, text: "C" }] }] },
+      { path: "README.md", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "D" }] }] },
+    ],
+  };
+
+  it("groups files under folder rows and shows only the file basename at the leaf", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getDiff: vi.fn().mockResolvedValue(nested),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("applying-demo");
+    await user.click(screen.getByTitle("View branch diff"));
+
+    // folder rows are present (src, and its sub-folders); the deep single-child
+    // chain docs/adr/0001-deep collapses into one row.
+    const dirLabels = [...document.querySelectorAll(".diff-tree-dir")].map((e) => e.textContent);
+    expect(dirLabels).toContain("src/");
+    expect(dirLabels).toContain("main/");
+    expect(dirLabels).toContain("renderer/");
+    expect(dirLabels).toContain("docs/adr/0001-deep/");
+
+    // leaves show the basename only, not the full path
+    const leaf = await screen.findByRole("button", { name: /core\.ts/ });
+    expect(leaf.textContent).toContain("core.ts");
+    expect(leaf.textContent).not.toContain("src/main");
+    // the full path is still available as the tooltip
+    expect(leaf).toHaveAttribute("title", "src/main/core.ts");
+  });
+
+  it("switches the shown file when a leaf in the tree is clicked", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([applyingChange()])),
+      getDiff: vi.fn().mockResolvedValue(nested),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("applying-demo");
+    await user.click(screen.getByTitle("View branch diff"));
+
+    await user.click(screen.getByRole("button", { name: /app\.tsx/ }));
+    expect(screen.getByText("B")).toBeTruthy();
+    expect(screen.queryByText("A")).toBeNull();
+  });
+});

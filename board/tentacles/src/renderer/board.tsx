@@ -58,8 +58,9 @@ function ApplyNode({ c, openArtifacts, openDiff }: { c: Change } & WithOpen) {
       </>
     );
   }
-  const cls = c.applyDone ? "done clickable" : c.applying ? "progress" : "pending";
   const onClick = a.file ? () => openArtifacts([a.file as string]) : undefined;
+  const base = c.applyDone ? "done" : c.applying ? "progress" : "pending";
+  const cls = onClick ? `${base} clickable` : base;
   const showDiff = c.applying || c.applyDone;
   return (
     <div className={`node ${cls}`} onClick={onClick}>
@@ -86,7 +87,7 @@ function ReviewNode({ c }: { c: Change }) {
     return (
       <div className="node done">
         <div className="phase">review</div>
-        <div className="state">✓ approved</div>
+        <div className="state">✓ Agent Approved</div>
       </div>
     );
   }
@@ -160,6 +161,17 @@ export function ChangeCard({
         {typeBadge}
         {badge}
         <span className="crepo">{c.schema}</span>
+        {c.pr && (
+          <a
+            className="pr-btn"
+            href={c.pr.url}
+            target="_blank"
+            rel="noopener"
+            title={`Open pull request #${c.pr.number}`}
+          >
+            #{c.pr.number}
+          </a>
+        )}
         <button
           className="finder-btn"
           onClick={async () => {
