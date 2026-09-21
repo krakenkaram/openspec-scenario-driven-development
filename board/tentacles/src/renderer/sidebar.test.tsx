@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { makeChange, makeStatus, mockApi, phase } from "./test-fixtures";
@@ -230,8 +230,7 @@ describe("selection and expansion persist; cold start and stale target", () => {
   });
 });
 
-async function waitForLeaf(): Promise<HTMLElement> {
-  const { waitFor } = await import("@testing-library/react");
+function waitForLeaf(): Promise<HTMLElement> {
   return waitFor(() => {
     const el = document.querySelector(".sb-leaf");
     expect(el).not.toBeNull();

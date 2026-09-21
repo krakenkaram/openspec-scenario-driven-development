@@ -7,30 +7,41 @@ const POLL_MS = 3000;
 // The inline branch-diff panel for the selected Worktree. It polls
 // getDiff(repoPath) every 3s while mounted (unmounting on deselect stops the
 // poll) and degrades gracefully: a first load shows the DiffView loading state;
-// a failed refresh keeps the last successfully-rendered diff on screen with a
-// small "couldn't refresh" indicator that the next success clears.
+// a failed refresh — whether the call rejects OR resolves { ok: false }, which
+// is how the main process reports operational failures — keeps the last good
+// diff on screen with a "couldn't refresh" indicator that the next success
+// clears. This component is keyed on repoPath by its parent so switching
+// worktrees remounts it (resetting selection/expansion state); the generation
+// guard additionally drops any out-of-order response.
 export function DiffPanel({ repoPath }: { repoPath: string }) {
   const [result, setResult] = useState<DiffResult | null>(null);
   const [staleRefresh, setStaleRefresh] = useState(false);
   const hasGood = useRef(false);
+  const reqGen = useRef(0);
 
   const fetchDiff = useCallback(async () => {
+    const gen = ++reqGen.current;
+    let outcome: DiffResult;
     try {
-      const r = await window.electronAPI.getDiff(repoPath);
-      setResult(r);
-      hasGood.current = r.ok;
-      setStaleRefresh(false);
+      outcome = await window.electronAPI.getDiff(repoPath);
     } catch {
-      // Keep the last good diff on screen; only surface a first-load failure.
-      if (hasGood.current) setStaleRefresh(true);
-      else setResult({ ok: false, error: "diff unavailable" });
+      outcome = { ok: false, error: "diff unavailable" };
+    }
+    if (gen !== reqGen.current) return; // a newer fetch superseded this one
+    if (outcome.ok) {
+      setResult(outcome);
+      hasGood.current = true;
+      setStaleRefresh(false);
+    } else if (hasGood.current) {
+      // Retain the last good diff; only flag the failed refresh.
+      setStaleRefresh(true);
+    } else {
+      // First load failed — surface the error rather than an endless spinner.
+      setResult(outcome);
     }
   }, [repoPath]);
 
   useEffect(() => {
-    setResult(null);
-    setStaleRefresh(false);
-    hasGood.current = false;
     void fetchDiff();
     const id = setInterval(() => void fetchDiff(), POLL_MS);
     return () => clearInterval(id);

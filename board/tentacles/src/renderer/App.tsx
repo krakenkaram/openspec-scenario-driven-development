@@ -272,7 +272,7 @@ export default function App() {
       />
     );
   } else if (selectedWorktreePath) {
-    main = <DiffPanel repoPath={selectedWorktreePath} />;
+    main = <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />;
   } else {
     main = (
       <div className="empty select-hint">

@@ -191,6 +191,40 @@ describe("the inline diff degrades gracefully", () => {
     expect(screen.queryByText(/couldn't refresh/i)).toBeNull();
   });
 
+  it("treats a resolved { ok:false } refresh as a failure and keeps the last diff", async () => {
+    vi.useFakeTimers();
+    const getDiff = vi
+      .fn()
+      .mockResolvedValueOnce(diffModel)
+      .mockResolvedValueOnce({ ok: false, error: "unknown repo" })
+      .mockResolvedValue(diffModel);
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])), getDiff });
+
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("new")).toBeTruthy();
+
+    // a poll that RESOLVES { ok:false } (not a rejection) must retain the last diff
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.getByText("new")).toBeTruthy();
+    expect(screen.queryByText(/Could not load diff/i)).toBeNull();
+    expect(screen.getByText(/couldn't refresh/i)).toBeTruthy();
+
+    // the next successful poll clears the indicator
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.queryByText(/couldn't refresh/i)).toBeNull();
+  });
+
   it("shows a loading state on first load until the first diff resolves", async () => {
     let resolveDiff!: (v: typeof diffModel) => void;
     const getDiff = vi.fn(
@@ -350,5 +384,42 @@ describe("the inline diff syntax-highlights code by language", () => {
 
     await screen.findByText("const answer = 42;");
     expect(document.querySelector(".diff-body .hljs-keyword")).toBeNull();
+  });
+});
+
+describe("switching worktrees does not leak the previous worktree's diff", () => {
+  function twoWorktrees() {
+    const a = makeChange({ change: "a", repoPath: "/Code/wt-a", repositoryId: "/Code/multi/.git", repositoryName: "multi", branch: "wt-a-branch" });
+    const b = makeChange({ change: "b", repoPath: "/Code/wt-b", repositoryId: "/Code/multi/.git", repositoryName: "multi", branch: "wt-b-branch", isPrimary: false });
+    return [a, b];
+  }
+  const fileWith = (text: string) => ({
+    ok: true as const,
+    files: [{ path: "f.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text }] }] }],
+  });
+
+  it("ignores a late response for worktree A after switching to B, rendering only B", async () => {
+    localStorage.clear();
+    localStorage.setItem("osb-expanded", JSON.stringify(["/Code/multi/.git"]));
+    let resolveA!: (v: ReturnType<typeof fileWith>) => void;
+    const getDiff = vi.fn((p: string) =>
+      p === "/Code/wt-a"
+        ? new Promise<ReturnType<typeof fileWith>>((r) => (resolveA = r))
+        : Promise.resolve(fileWith("B-DATA"))
+    );
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoWorktrees(), 1)), getDiff });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle("/Code/wt-a")); // A panel mounts, diff pending
+    await user.click(screen.getByTitle("/Code/wt-b")); // switch to B, which resolves
+    expect(await screen.findByText("B-DATA")).toBeTruthy();
+
+    // A's request now resolves late — it must not populate B's panel
+    await act(async () => {
+      resolveA(fileWith("A-DATA"));
+    });
+    expect(screen.getByText("B-DATA")).toBeTruthy();
+    expect(screen.queryByText("A-DATA")).toBeNull();
   });
 });
