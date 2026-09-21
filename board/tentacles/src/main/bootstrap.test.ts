@@ -66,7 +66,7 @@ describe("bootstrap startup coordinator", () => {
     });
 
     expect(instances).toHaveLength(1);
-    expect(order.filter((x) => x === "ipc")).toHaveLength(11); // eleven channels
+    expect(order.filter((x) => x === "ipc")).toHaveLength(12); // twelve channels
     expect(order.indexOf("window")).toBeGreaterThan(order.lastIndexOf("ipc"));
     expect(order.indexOf("window")).toBeGreaterThan(order.indexOf("path"));
   });

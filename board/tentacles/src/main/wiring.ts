@@ -62,6 +62,7 @@ export const IPC: ChannelMap = {
   setSettings: "board:setSettings",
   chooseDirectory: "board:chooseDirectory",
   openPath: "board:openPath",
+  openFile: "board:openFile",
   install: "board:install",
   doctor: "board:doctor",
 };
@@ -74,6 +75,7 @@ export interface BoardCore {
   getFileDiff(args: Args, repoPath: string, filePath: string): Promise<DiffResult>;
   archiveChange(args: Args, repoPath: string, change: string): Promise<ArchiveResult>;
   openWorktree(args: Args, target: string, opener: OpenPath): Promise<OpenPathResult>;
+  openRepoFile(args: Args, repoPath: string, filePath: string, opener: OpenPath): Promise<OpenPathResult>;
 }
 
 export interface WindowOpts {
@@ -238,6 +240,10 @@ export function makeHandlers(
       if (!openPath) return { ok: false, error: "open unavailable" };
       return core.openWorktree(getArgs(), target, openPath);
     },
+    openFile: async (_event: IpcMainInvokeEvent, repoPath: string, filePath: string): Promise<OpenPathResult> => {
+      if (!openPath) return { ok: false, error: "open unavailable" };
+      return core.openRepoFile(getArgs(), repoPath, filePath, openPath);
+    },
   };
 }
 
@@ -266,6 +272,7 @@ export function registerIpc(
   ipcMain.handle(IPC.setSettings, handlers.setSettings);
   ipcMain.handle(IPC.chooseDirectory, handlers.chooseDirectory);
   ipcMain.handle(IPC.openPath, handlers.openPath);
+  ipcMain.handle(IPC.openFile, handlers.openFile);
   ipcMain.handle(IPC.install, handlers.install);
   ipcMain.handle(IPC.doctor, handlers.doctor);
   return handlers;

@@ -38,9 +38,9 @@ navigates only — choosing what the main panel shows — and holds no other chr
 or status strip).
 
 ### Selection
-The single active scope chosen in the Sidebar. Selecting a Repository shows its Changes' phase-node
-progress in the main panel; selecting a Worktree shows that worktree's branch diff. Exactly one
-selection is active at a time.
+The single active scope chosen in the Sidebar. Selecting a Repository shows all its Changes'
+phase-node progress in the main panel; selecting a Worktree shows that worktree's own Change
+chain(s) pinned above its live branch diff. Exactly one selection is active at a time.
 _Avoid_: Focus, active tab.
 
 ### Status indicator

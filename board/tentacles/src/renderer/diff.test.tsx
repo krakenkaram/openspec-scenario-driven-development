@@ -437,7 +437,7 @@ describe("the inline diff syntax-highlights code by language", () => {
 });
 
 describe("clicking a diffed file name opens it in the OS-default app", () => {
-  it("calls openPath with the worktree-joined absolute path", async () => {
+  it("calls openFile with the repo path and the diff's relative file path", async () => {
     const api = mockApi({
       getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
       getDiff: vi.fn().mockResolvedValue({
@@ -451,7 +451,7 @@ describe("clicking a diffed file name opens it in the OS-default app", () => {
     await user.click(await screen.findByTitle(LEAF));
     await user.click(await screen.findByRole("button", { name: "src/x.ts" }));
 
-    expect(api.openPath).toHaveBeenCalledWith("/Code/repo-a/src/x.ts");
+    expect(api.openFile).toHaveBeenCalledWith("/Code/repo-a", "src/x.ts");
   });
 });
 

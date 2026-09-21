@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's eleven
+// Type-only IPC contract: the single source of truth for the board's twelve
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -159,6 +159,7 @@ export interface ChannelMap {
   setSettings: "board:setSettings";
   chooseDirectory: "board:chooseDirectory";
   openPath: "board:openPath";
+  openFile: "board:openFile";
   install: "board:install";
   doctor: "board:doctor";
 }
@@ -187,6 +188,10 @@ export interface ElectronAPI {
   setSettings(payload: SetSettingsArgs): Promise<SetSettingsResult>;
   chooseDirectory(): Promise<ChooseDirectoryResult>;
   openPath(target: string): Promise<OpenPathResult>;
+  // Open a file that appears in a repo's branch diff in the OS-default editor.
+  // filePath is the diff's top-level-relative path; the main process resolves it
+  // against the repo's git top-level and guards containment (see openRepoFile).
+  openFile(repoPath: string, filePath: string): Promise<OpenPathResult>;
   onNotificationSound(handler: () => void): () => void;
   install(payload: InstallArgs): Promise<InstallResult>;
   doctor(payload: DoctorArgs): Promise<DoctorResult>;
