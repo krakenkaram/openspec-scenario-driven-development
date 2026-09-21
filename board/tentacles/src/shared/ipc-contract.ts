@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's twelve
+// Type-only IPC contract: the single source of truth for the board's fourteen
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -72,6 +72,14 @@ export type StatusResult = StatusOk | StatusError;
 export interface ArchiveArgs {
   repoPath: string;
   change: string;
+}
+// Execute an archive that may tear down the worktree. The acceptances carry the
+// user's answer to the single confirmation's enumerated warnings.
+export interface ArchiveExecuteArgs {
+  repoPath: string;
+  change: string;
+  acceptUnmerged: boolean;
+  acceptDirty: boolean;
 }
 export type ArchiveResult = { ok: true } | { ok: false; error: string };
 
@@ -208,6 +216,8 @@ export interface ChannelMap {
   getDiff: "board:getDiff";
   getFileDiff: "board:getFileDiff";
   archive: "board:archive";
+  archivePlan: "board:archivePlan";
+  archiveExecute: "board:archiveExecute";
   getSettings: "board:getSettings";
   setSettings: "board:setSettings";
   chooseDirectory: "board:chooseDirectory";
@@ -237,6 +247,10 @@ export interface ElectronAPI {
   getDiff(repoPath: string): Promise<DiffResult>;
   getFileDiff(repoPath: string, filePath: string): Promise<DiffResult>;
   archive(payload: ArchiveArgs): Promise<ArchiveResult>;
+  // Compute what archiving a change would do to its worktree (for the single
+  // confirmation), and execute an archive-with-teardown carrying the acceptances.
+  archivePlan(payload: ArchiveArgs): Promise<TeardownPlan>;
+  archiveExecute(payload: ArchiveExecuteArgs): Promise<ArchiveExecuteResult>;
   getSettings(): Promise<BoardSettings>;
   setSettings(payload: SetSettingsArgs): Promise<SetSettingsResult>;
   chooseDirectory(): Promise<ChooseDirectoryResult>;
