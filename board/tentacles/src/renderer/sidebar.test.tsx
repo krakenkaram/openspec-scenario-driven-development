@@ -322,4 +322,19 @@ describe("the sidebar width is draggable within bounds", () => {
     drag(0, -500);
     expect(parseInt(sidebar.style.width, 10)).toBe(180);
   });
+
+  it("clamps the sidebar at 40% of a measurable layout width on a large rightward drag", async () => {
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
+    render(<App />);
+    await screen.findByText("wings-core");
+    const layout = document.querySelector(".layout") as HTMLElement;
+    const sidebar = document.querySelector(".sidebar") as HTMLElement;
+    // jsdom reports 0 for clientWidth; make the layout measurable so the
+    // min(480, 40% of layout) branch (rather than the 480 fallback) is exercised.
+    Object.defineProperty(layout, "clientWidth", { configurable: true, value: 1000 });
+
+    drag(0, 1000);
+    // 40% of 1000 = 400, which is under the 480 ceiling, so the width clamps at 400.
+    expect(parseInt(sidebar.style.width, 10)).toBe(400);
+  });
 });
