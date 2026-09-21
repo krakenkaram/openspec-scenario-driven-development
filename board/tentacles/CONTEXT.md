@@ -44,9 +44,22 @@ chain(s) pinned above its live branch diff. Exactly one selection is active at a
 _Avoid_: Focus, active tab.
 
 ### Status indicator
-The per-Worktree signal shown on its sidebar row: **done**, **in progress**, or **idle**. When a
-Worktree holds more than one Change the least-done Change wins, so it reads done only when all its
-Changes are done. It is derived from the same phase state the card chain shows.
+The per-Worktree signal shown on its sidebar row, one of four states: **completed**, **in progress**,
+**blocked**, or **idle**. When a Worktree holds more than one Change the highest-attention state wins,
+in the order blocked > in progress > completed > idle (this matches the row's sort tier, so the
+indicator and the row's position never contradict). It is derived from the same phase state the card
+chain shows, plus the pull request review decision for blocked.
+
+- **Completed** — every Change is complete. Shown as a green tick with the whole row de-emphasised
+  (dimmed), since a finished Worktree needs no attention.
+- **In progress** — a Change is actively worked (applying, a phase in progress, or in agent review).
+  Shown as a yellow spinner.
+- **Blocked** — a Change's pull request has requested changes (`reviewDecision === "CHANGES_REQUESTED"`),
+  the one signal that unambiguously means a person must act. Shown as a red circle. This is the same
+  predicate that puts a Worktree in the waiting-on-human sort tier.
+- **Idle** — has Changes but none are active, blocked, or all-complete (e.g. planned but not yet picked
+  up). Shown as a neutral grey dot.
+
 _Avoid_: Badge, health, traffic light.
 
 ### Scan root

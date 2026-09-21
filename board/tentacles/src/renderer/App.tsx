@@ -62,6 +62,31 @@ export default function App() {
     sections: [],
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(264);
+  const layoutRef = useRef<HTMLDivElement>(null);
+
+  // Drag the handle on the sidebar's right edge to resize it. Bounds: min 180px
+  // (below this the monospace repo/branch labels truncate uselessly) and max the
+  // smaller of 480px or 40% of the window (stricter than the diff picker's 60%
+  // because the main panel is the point of the app); when the layout width can't
+  // be measured the max falls back to 480. Not persisted — resets each launch,
+  // matching the diff file-picker's resizer.
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      const layout = layoutRef.current?.clientWidth ?? 0;
+      const maxW = layout > 0 ? Math.min(480, Math.round(layout * 0.4)) : 480;
+      setSidebarWidth(Math.max(180, Math.min(startW + (ev.clientX - startX), maxW)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   useLayoutEffect(() => {
     if (theme) document.documentElement.setAttribute("data-theme", theme);
@@ -316,14 +341,22 @@ export default function App() {
           <span>{statusText}</span>
         </div>
       </header>
-      <div className="layout">
+      <div className="layout" ref={layoutRef}>
         <Sidebar
           groups={grouped}
           expanded={expanded}
           selection={selection}
+          width={sidebarWidth}
           onToggle={toggleRepo}
           onSelectRepo={selectRepo}
           onSelectWorktree={selectWorktree}
+        />
+        <div
+          className="sb-resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={startResize}
         />
         <main>{main}</main>
       </div>
