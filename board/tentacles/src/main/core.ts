@@ -356,6 +356,19 @@ async function mergeBase(repo: string): Promise<string | null> {
   return null;
 }
 
+// The git top-level of a scanned directory. `git diff` emits AND interprets file
+// paths relative to this top-level — which is NOT necessarily the scanned repoPath:
+// an OpenSpec change can live in a sub-directory of its git repo (a nested project
+// layout), leaving the discovered openspec/changes dir below the top-level. Anchoring
+// the branch diff and the open-in-editor path math here (rather than on repoPath)
+// keeps both correct for flat repos (top-level == repoPath) and nested ones alike.
+// Returns null outside any git repo, so callers fall back to repoPath.
+async function gitToplevel(repo: string): Promise<string | null> {
+  const out = await runGitText(repo, ["rev-parse", "--show-toplevel"]);
+  const top = String(out ?? "").trim();
+  return top ? top : null;
+}
+
 // Tracked changes as one unified diff: merge-base → working tree, i.e. exactly what
 // this branch contributes (committed-on-branch ∪ staged ∪ unstaged) while EXCLUDING
 // commits that landed on the base after the branch diverged. Comparing against the
@@ -474,7 +487,10 @@ export async function getDiff(args: Args, repoPath: string): Promise<DiffResult>
   const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
   if (!okRepo) return { ok: false, error: "unknown repo" };
   try {
-    const raw = [await trackedDiff(repoPath), await untrackedDiff(repoPath)].filter(Boolean).join("\n");
+    // git reports paths relative to the top-level, so run the diff from there — for
+    // a nested project the scanned dir is below it (see gitToplevel).
+    const root = (await gitToplevel(repoPath)) ?? repoPath;
+    const raw = [await trackedDiff(root), await untrackedDiff(root)].filter(Boolean).join("\n");
     return { ok: true, files: parseDiff(raw) };
   } catch (e) {
     return { ok: false, error: String(e) };
@@ -558,12 +574,15 @@ export async function getFileDiff(args: Args, repoPath: string, filePath: string
   const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
   if (!okRepo) return { ok: false, error: "unknown repo" };
   if (!filePath) return { ok: false, error: "no file" };
-  const repoRoot = path.resolve(repoPath);
+  // filePath is top-level-relative (as getDiff reports it), so anchor containment
+  // and the git pathspec on the top-level, not the scanned sub-directory.
+  const root = (await gitToplevel(repoPath)) ?? repoPath;
+  const repoRoot = path.resolve(root);
   const canonical = containedRealPath(repoRoot, filePath);
   if (!canonical) return { ok: false, error: "path outside repo" };
   const relFile = path.relative(fs.realpathSync(repoRoot), canonical);
   try {
-    return { ok: true, files: parseDiff(await fileDiffFullContext(repoPath, repoRoot, relFile)) };
+    return { ok: true, files: parseDiff(await fileDiffFullContext(root, repoRoot, relFile)) };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -903,6 +922,40 @@ export async function openWorktree(
   return error ? { ok: false, error } : { ok: true };
 }
 
+// Guarded open-in-editor for a FILE that appears in a discovered repo's branch
+// diff. Where openWorktree reveals a worktree ROOT (matched by exact discovered
+// path), this opens a file INSIDE the repo, so its guard is containment: the
+// renderer-supplied path — untrusted (ADR-0002) and top-level-relative as getDiff
+// reports it, so resolved against the git top-level (the same anchor getDiff /
+// getFileDiff use, which is what makes a nested-project path resolve correctly) —
+// must canonicalise to a regular file still inside that top-level. A path that
+// escapes, points at a non-file, or does not exist is rejected before the shell is
+// touched, and the canonical (realpath-resolved) path is opened, never the raw
+// input, so an in-repo symlink cannot redirect the OS off disk.
+export async function openRepoFile(
+  args: Args,
+  repoPath: string,
+  filePath: string,
+  opener: PathOpener
+): Promise<OpenPathResult> {
+  const repos = discoverRepos(args);
+  const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
+  if (!okRepo) return { ok: false, error: "unknown repo or worktree" };
+  if (!filePath) return { ok: false, error: "no file" };
+  const root = (await gitToplevel(repoPath)) ?? repoPath;
+  const canonical = containedRealPath(path.resolve(root), filePath);
+  if (!canonical) return { ok: false, error: "path outside repo" };
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(canonical);
+  } catch {
+    return { ok: false, error: "not found" };
+  }
+  if (!stat.isFile()) return { ok: false, error: "not a file" };
+  const error = await opener(canonical);
+  return error ? { ok: false, error } : { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // Setup tool: install planner + doctor checker (pure), the bundle-root resolver,
 // and the thin real fs/exec boundary. The planner/checker return DATA (labelled
@@ -1193,4 +1246,5 @@ export default {
   archiveChange,
   readArtifact,
   openWorktree,
+  openRepoFile,
 };

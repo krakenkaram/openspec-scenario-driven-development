@@ -20,6 +20,35 @@ artifact exists. For example, grilling is complete once `proposal.md` exists —
 interview is still in progress. The final planning phase, having no successor artifact, is
 complete once the plan as a whole is complete.
 
+### Repository
+A git repository the board surveys, identified by its shared git common-dir. One repository owns one
+or more Worktrees. Its display label is derived from the repository, not from any single worktree
+folder.
+_Avoid_: Project, folder, repo (informal).
+
+### Worktree
+A single git checkout under a Repository (a working directory on a branch). A Worktree may hold one
+or more Changes at once. The **primary** worktree is the repository's main checkout; the others are
+linked worktrees.
+_Avoid_: Checkout, clone, project.
+
+### Sidebar
+The left-hand navigation tree listing each Repository and, when expanded, its Worktrees. The sidebar
+navigates only — choosing what the main panel shows — and holds no other chrome (no title, settings,
+or status strip).
+
+### Selection
+The single active scope chosen in the Sidebar. Selecting a Repository shows all its Changes'
+phase-node progress in the main panel; selecting a Worktree shows that worktree's own Change
+chain(s) pinned above its live branch diff. Exactly one selection is active at a time.
+_Avoid_: Focus, active tab.
+
+### Status indicator
+The per-Worktree signal shown on its sidebar row: **done**, **in progress**, or **idle**. When a
+Worktree holds more than one Change the least-done Change wins, so it reads done only when all its
+Changes are done. It is derived from the same phase state the card chain shows.
+_Avoid_: Badge, health, traffic light.
+
 ### Scan root
 The directory the board scans for repositories that contain OpenSpec changes. Chosen by the user
 in Settings; falls back to an environment override and then to a default location when unset.

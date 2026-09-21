@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { ChannelMap, ElectronAPI, EventChannelMap } from "../shared/ipc-contract";
 
-// Exactly eleven named channels — no generic command passthrough. A sandboxed
+// Exactly twelve named channels — no generic command passthrough. A sandboxed
 // preload cannot import wiring.ts at runtime, so the channel strings are
 // declared here; typing the map as the shared ChannelMap asserts each method is
 // bound to its exact channel (a typo, missing key, or swap fails to compile).
@@ -15,6 +15,7 @@ const CHANNELS: ChannelMap = {
   setSettings: "board:setSettings",
   chooseDirectory: "board:chooseDirectory",
   openPath: "board:openPath",
+  openFile: "board:openFile",
   install: "board:install",
   doctor: "board:doctor",
 };
@@ -35,6 +36,7 @@ const api: ElectronAPI = {
   setSettings: (payload) => ipcRenderer.invoke(CHANNELS.setSettings, payload),
   chooseDirectory: () => ipcRenderer.invoke(CHANNELS.chooseDirectory),
   openPath: (target) => ipcRenderer.invoke(CHANNELS.openPath, target),
+  openFile: (repoPath, filePath) => ipcRenderer.invoke(CHANNELS.openFile, repoPath, filePath),
   onNotificationSound: (handler) => {
     const listener = () => handler();
     ipcRenderer.on(EVENTS.notificationSound, listener);

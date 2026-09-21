@@ -372,3 +372,58 @@ describe("getFileDiff — full-context diff of one file", () => {
     expect(JSON.stringify(res)).not.toContain("TOP-SECRET-CONTENT");
   });
 });
+
+describe("getFileDiff — nested project layout (openspec/changes below the git top-level)", () => {
+  // A repo whose git top-level is the OUTER dir but whose discovered project (the
+  // dir carrying openspec/changes) is a sub-directory. git emits and interprets
+  // diff paths relative to the top-level, so the scanned project path is the wrong
+  // anchor for resolving a file's diff.
+  function makeNestedRepo(): { root: string; proj: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "filediff-nested-"));
+    created.push(root);
+    git(root, ["init", "-b", "master"]);
+    git(root, ["config", "user.email", "t@t.t"]);
+    git(root, ["config", "user.name", "t"]);
+    const proj = path.join(root, "proj");
+    fs.mkdirSync(path.join(proj, "openspec", "changes"), { recursive: true });
+    fs.mkdirSync(path.join(proj, "src"), { recursive: true });
+    const base = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n") + "\n";
+    fs.writeFileSync(path.join(proj, "src", "big.ts"), base);
+    git(root, ["add", "."]);
+    git(root, ["commit", "-m", "base"]);
+    git(root, ["checkout", "-b", "feature"]);
+    fs.writeFileSync(path.join(proj, "src", "big.ts"), base.replace("line 10", "line TEN"));
+    git(root, ["add", "."]);
+    git(root, ["commit", "-m", "change nested file"]);
+    return { root, proj };
+  }
+
+  it("reports the file by its git-top-level-relative path", async () => {
+    const { proj } = makeNestedRepo();
+    const args: Args = { repos: [proj], root: "/nonexistent", depth: 1 };
+
+    const list = await getDiff(args, proj);
+
+    expect(list.ok).toBe(true);
+    if (!list.ok) return;
+    expect(list.files.map((f) => f.path)).toContain("proj/src/big.ts");
+  });
+
+  it("expands a nested file's full contents given that top-level-relative path", async () => {
+    const { proj } = makeNestedRepo();
+    const args: Args = { repos: [proj], root: "/nonexistent", depth: 1 };
+
+    // Regression: previously empty, because the full-file pathspec was resolved
+    // against the scanned sub-directory rather than the git top-level.
+    const res = await getFileDiff(args, proj, "proj/src/big.ts");
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.files.map((f) => f.path)).toEqual(["proj/src/big.ts"]);
+    const lines = res.files[0]!.hunks.flatMap((h) => h.lines);
+    expect(lines.some((l) => l.kind === "del" && l.text === "line 10")).toBe(true);
+    expect(lines.some((l) => l.kind === "add" && l.text === "line TEN")).toBe(true);
+    expect(lines.some((l) => l.kind === "context" && l.text === "line 1")).toBe(true);
+    expect(lines.some((l) => l.kind === "context" && l.text === "line 20")).toBe(true);
+  });
+});

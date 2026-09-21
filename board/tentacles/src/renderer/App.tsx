@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Change, DiffFile, DiffResult, StatusResult } from "../shared/ipc-contract";
-import { RepoGroup } from "./board";
+import type { Change, StatusResult } from "../shared/ipc-contract";
+import { RepoGroup, ChangeCard } from "./board";
 import { groupWorktrees } from "../shared/grouping";
 import { Modal, type ModalSection } from "./modal";
-import { DiffModal } from "./diffModal";
+import { Sidebar, type Selection } from "./sidebar";
+import { DiffPanel } from "./diffPanel";
 import { SettingsPanel } from "./settings";
 import notificationSoundUrl from "./assets/msn-message.mp3";
 
@@ -24,11 +25,22 @@ function readSavedTheme(): ThemeChoice {
   return saved === "light" || saved === "dark" ? saved : null;
 }
 
-function readCollapsed(): Set<string> {
+function readExpanded(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem("osb-collapsed") || "[]") as string[]);
+    return new Set(JSON.parse(localStorage.getItem("osb-expanded") || "[]") as string[]);
   } catch {
     return new Set();
+  }
+}
+
+function readSelection(): Selection {
+  try {
+    const s = JSON.parse(localStorage.getItem("osb-selection") || "null");
+    if (s && s.kind === "repo" && typeof s.repositoryId === "string") return s as Selection;
+    if (s && s.kind === "worktree" && typeof s.repoPath === "string") return s as Selection;
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -38,7 +50,8 @@ export default function App() {
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
   const [theme, setTheme] = useState<ThemeChoice>(() => readSavedTheme());
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsed());
+  const [expanded, setExpanded] = useState<Set<string>>(() => readExpanded());
+  const [selection, setSelection] = useState<Selection>(() => readSelection());
   const [archived, setArchived] = useState<Set<string>>(() => new Set());
   const [archiving, setArchiving] = useState<Set<string>>(() => new Set());
   const [removing, setRemoving] = useState<Set<string>>(() => new Set());
@@ -49,11 +62,6 @@ export default function App() {
     sections: [],
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [diff, setDiff] = useState<{ open: boolean; repoPath: string | null; result: DiffResult | null }>({
-    open: false,
-    repoPath: null,
-    result: null,
-  });
 
   useLayoutEffect(() => {
     if (theme) document.documentElement.setAttribute("data-theme", theme);
@@ -129,49 +137,6 @@ export default function App() {
 
   const closeModal = useCallback(() => setModal((m) => ({ ...m, open: false })), []);
 
-  const fetchDiff = useCallback(async (repoPath: string) => {
-    try {
-      const result = await window.electronAPI.getDiff(repoPath);
-      setDiff((d) => (d.open && d.repoPath === repoPath ? { ...d, result } : d));
-    } catch {
-      setDiff((d) =>
-        d.open && d.repoPath === repoPath ? { ...d, result: { ok: false, error: "diff unavailable" } } : d
-      );
-    }
-  }, []);
-
-  const openDiff = useCallback(
-    (repoPath: string) => {
-      setDiff({ open: true, repoPath, result: null });
-      void fetchDiff(repoPath);
-    },
-    [fetchDiff]
-  );
-
-  const closeDiff = useCallback(() => setDiff((d) => ({ ...d, open: false })), []);
-
-  const getFullFile = useCallback(
-    async (filePath: string): Promise<DiffFile | null> => {
-      const repoPath = diff.repoPath;
-      if (!repoPath) return null;
-      try {
-        const res = await window.electronAPI.getFileDiff(repoPath, filePath);
-        if (!res.ok) return null;
-        return res.files.find((f) => f.path === filePath) ?? res.files[0] ?? null;
-      } catch {
-        return null;
-      }
-    },
-    [diff.repoPath]
-  );
-
-  useEffect(() => {
-    if (!diff.open || !diff.repoPath) return;
-    const repoPath = diff.repoPath;
-    const id = setInterval(() => void fetchDiff(repoPath), REFRESH_MS);
-    return () => clearInterval(id);
-  }, [diff.open, diff.repoPath, fetchDiff]);
-
   const onArchive = useCallback(
     async (c: Change) => {
       const k = keyOf(c);
@@ -217,21 +182,63 @@ export default function App() {
     [refresh]
   );
 
-  const toggleRepo = useCallback((repo: string) => {
-    setCollapsed((prev) => {
+  const persistExpanded = (next: Set<string>) =>
+    localStorage.setItem("osb-expanded", JSON.stringify([...next]));
+
+  const applySelection = useCallback((next: Selection) => {
+    setSelection(next);
+    if (next) localStorage.setItem("osb-selection", JSON.stringify(next));
+    else localStorage.removeItem("osb-selection");
+  }, []);
+
+  const toggleRepo = useCallback((repositoryId: string) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(repo)) next.delete(repo);
-      else next.add(repo);
-      localStorage.setItem("osb-collapsed", JSON.stringify([...next]));
+      if (next.has(repositoryId)) next.delete(repositoryId);
+      else next.add(repositoryId);
+      persistExpanded(next);
       return next;
     });
   }, []);
+
+  const selectRepo = useCallback(
+    (repositoryId: string) => {
+      setExpanded((prev) => {
+        if (prev.has(repositoryId)) return prev;
+        const next = new Set(prev).add(repositoryId);
+        persistExpanded(next);
+        return next;
+      });
+      applySelection({ kind: "repo", repositoryId });
+    },
+    [applySelection]
+  );
+
+  const selectWorktree = useCallback(
+    (repoPath: string) => applySelection({ kind: "worktree", repoPath }),
+    [applySelection]
+  );
 
   const grouped = useMemo(() => {
     if (!status || "error" in status) return [];
     const visible = status.changes.filter((c) => !archived.has(keyOf(c)));
     return groupWorktrees(visible);
   }, [status, archived]);
+
+  // A persisted (or now-removed) target that no longer exists falls back to the
+  // neutral empty state; clear it so the sidebar highlight and storage agree.
+  const selectedGroup =
+    selection?.kind === "repo" ? grouped.find((g) => g.repositoryId === selection.repositoryId) : undefined;
+  const selectedWorktreePath =
+    selection?.kind === "worktree" && grouped.some((g) => g.worktrees.some((c) => c.repoPath === selection.repoPath))
+      ? selection.repoPath
+      : undefined;
+
+  useEffect(() => {
+    if (!status || "error" in status || !selection) return;
+    const exists = selection.kind === "repo" ? Boolean(selectedGroup) : Boolean(selectedWorktreePath);
+    if (!exists) applySelection(null);
+  }, [status, selection, selectedGroup, selectedWorktreePath, applySelection]);
 
   const repoCount = status && "repoCount" in status ? status.repoCount : 0;
   const changeCount = status && "changes" in status ? status.changes.length : 0;
@@ -248,23 +255,50 @@ export default function App() {
     main = <div className="err">Error: {status.error}</div>;
   } else if (grouped.length === 0) {
     main = <div className="empty">No active OpenSpec changes found across {repoCount} repo(s).</div>;
-  } else {
-    main = grouped.map((g) => (
+  } else if (selectedGroup) {
+    main = (
       <RepoGroup
-        key={g.repositoryId}
-        repositoryId={g.repositoryId}
-        repositoryName={g.repositoryName}
-        nested={g.nested}
-        list={g.worktrees}
-        collapsed={collapsed.has(g.repositoryId)}
-        onToggle={toggleRepo}
+        key={selectedGroup.repositoryId}
+        repositoryId={selectedGroup.repositoryId}
+        repositoryName={selectedGroup.repositoryName}
+        nested={selectedGroup.nested}
+        list={selectedGroup.worktrees}
+        collapsed={false}
+        onToggle={() => {}}
         openArtifacts={openArtifacts}
-        openDiff={openDiff}
         onArchive={onArchive}
         archivingKeys={archiving}
         removingKeys={removing}
       />
-    ));
+    );
+  } else if (selectedWorktreePath) {
+    const worktreeChanges = grouped
+      .flatMap((g) => g.worktrees)
+      .filter((c) => c.repoPath === selectedWorktreePath);
+    main = (
+      <div className="worktree-detail">
+        <div className="worktree-detail-nodes">
+          {worktreeChanges.map((c) => (
+            <ChangeCard
+              key={keyOf(c)}
+              c={c}
+              showBranch={false}
+              openArtifacts={openArtifacts}
+              onArchive={onArchive}
+              busy={archiving.has(keyOf(c))}
+              removing={removing.has(keyOf(c))}
+            />
+          ))}
+        </div>
+        <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />
+      </div>
+    );
+  } else {
+    main = (
+      <div className="empty select-hint">
+        Select a repository to view its progress, or a worktree to view its live diff.
+      </div>
+    );
   }
 
   return (
@@ -282,17 +316,18 @@ export default function App() {
           <span>{statusText}</span>
         </div>
       </header>
-      <main>{main}</main>
-      <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
-      {diff.open && (
-        <DiffModal
-          open={diff.open}
-          title={diff.repoPath ? `Branch diff — ${diff.repoPath.split("/").pop()}` : "Branch diff"}
-          result={diff.result}
-          onClose={closeDiff}
-          getFullFile={getFullFile}
+      <div className="layout">
+        <Sidebar
+          groups={grouped}
+          expanded={expanded}
+          selection={selection}
+          onToggle={toggleRepo}
+          onSelectRepo={selectRepo}
+          onSelectWorktree={selectWorktree}
         />
-      )}
+        <main>{main}</main>
+      </div>
+      <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void refresh()} />
     </>
   );

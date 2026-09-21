@@ -1,29 +1,40 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { makeChange, makeStatus, mockApi, phase } from "./test-fixtures";
+import { makeChange, makeStatus, mockApi, phase, selectRepo } from "./test-fixtures";
+
+// The cards for a repo render only when that repo is the active sidebar
+// Selection, so seed the default repo selection before each test. Tests that
+// exercise a different repo re-seed it before rendering.
+beforeEach(() => {
+  localStorage.clear();
+  selectRepo();
+});
 
 describe("the renderer renders the board state", () => {
-  it("renders changes grouped by repo with correct ordering and badges", async () => {
+  it("lists repositories in the sidebar and orders the selected repo's cards", async () => {
     const incomplete = makeChange({ change: "a-incomplete", repo: "repo-a", repoPath: "/Code/repo-a", repositoryId: "/Code/repo-a/.git", repositoryName: "repo-a", type: "feature", complete: false });
     const complete = makeChange({ change: "z-complete", repo: "repo-a", repoPath: "/Code/repo-a", repositoryId: "/Code/repo-a/.git", repositoryName: "repo-a", type: "refactor", complete: true, review: "passed" });
     const other = makeChange({ change: "b-other", repo: "repo-b", repoPath: "/Code/repo-b", repositoryId: "/Code/repo-b/.git", repositoryName: "repo-b" });
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([complete, incomplete, other], 2)) });
 
     const { container } = render(<App />);
-    await screen.findByText("a-incomplete");
+    await screen.findByText("repo-a", { selector: ".sb-repo-name" });
 
-    // ordering: repo-a before repo-b; within repo-a incomplete before complete
+    // the sidebar lists both repositories in name order
+    const repoNames = [...document.querySelectorAll(".sb-repo-name")].map((e) => e.textContent);
+    expect(repoNames).toEqual(["repo-a", "repo-b"]);
+
+    // repo-a is the seeded selection: only its cards show, incomplete before complete
     const names = [...container.querySelectorAll(".cname")].map((e) => e.textContent);
-    expect(names).toEqual(["a-incomplete", "z-complete", "b-other"]);
-
-    // repo summaries
+    expect(names).toEqual(["a-incomplete", "z-complete"]);
     expect(screen.getByText("2 change(s) · 1 complete")).toBeInTheDocument();
-    expect(screen.getByText("1 change(s) · 0 complete")).toBeInTheDocument();
+    // none of repo-b's changes are in the main panel
+    expect(screen.queryByText("b-other")).toBeNull();
 
-    // badges
-    expect(screen.getAllByText("FEATURE")).toHaveLength(2);
+    // badges of the visible (repo-a) cards
+    expect(screen.getAllByText("FEATURE")).toHaveLength(1);
     expect(screen.getByText("REFACTOR")).toBeInTheDocument();
     expect(screen.getByText("COMPLETE")).toBeInTheDocument();
   });
@@ -41,17 +52,29 @@ describe("the renderer renders the board state", () => {
       change: "solo-change", repo: "lonely", repoPath: "/Code/lonely",
       repositoryId: "/Code/lonely/.git", repositoryName: "lonely", branch: "feat-solo",
     });
+    selectRepo("/Code/wings-core/.git");
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([featA, featB, solo], 2)) });
 
     const { container } = render(<App />);
     await screen.findByText("feat-a-change");
 
-    // both concurrent worktrees show their branch chip
+    // both concurrent worktrees (wings-core selected) show their branch chip
     const chips = [...container.querySelectorAll(".branch-chip")].map((e) => e.textContent);
     expect(chips).toContain("feat-a");
     expect(chips).toContain("feat-b");
+  });
 
-    // the lone worktree shows no branch chip (renders as today)
+  it("shows no branch chip for a lone worktree repository", async () => {
+    const solo = makeChange({
+      change: "solo-change", repo: "lonely", repoPath: "/Code/lonely",
+      repositoryId: "/Code/lonely/.git", repositoryName: "lonely", branch: "feat-solo",
+    });
+    selectRepo("/Code/lonely/.git");
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([solo], 1)) });
+
+    render(<App />);
+    await screen.findByText("solo-change");
+
     const soloCard = screen.getByText("solo-change").closest(".change");
     expect(soloCard?.querySelector(".branch-chip")).toBeNull();
   });

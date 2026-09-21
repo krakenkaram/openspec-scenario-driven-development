@@ -137,6 +137,10 @@ main { padding:20px 24px 60px; max-width:1200px; margin:0 auto; }
 .diff-path { font-weight:600; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .diff-expand { margin-left:auto; flex-shrink:0; border:1px solid var(--border); background:none; color:var(--muted); font-family:inherit; font-size:0.72rem; padding:2px 9px; border-radius:5px; cursor:pointer; }
 .diff-expand:hover { border-color:var(--accent); color:var(--accent); }
+.diff-resize { flex:0 0 5px; cursor:col-resize; background:var(--border); opacity:.5; }
+.diff-resize:hover { opacity:1; background:var(--accent); }
+.diff-path-btn { border:none; background:none; padding:0; margin:0; font:inherit; color:var(--fg); cursor:pointer; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.diff-path-btn:hover { color:var(--accent); text-decoration:underline; }
 .diff-status { text-transform:uppercase; font-size:0.66rem; letter-spacing:0.04em; padding:1px 6px; border-radius:4px; border:1px solid var(--border); color:var(--muted); }
 .diff-status.added { color:var(--done); border-color:var(--done); }
 .diff-status.deleted { color:#f87171; border-color:#f87171; }
@@ -202,3 +206,43 @@ html[data-theme="light"] {
 .setup-results .row-label { color:var(--fg); }
 .setup-results .row-reason { color:var(--muted); font-size:0.76rem; }
 .setup-results .row-fail .row-label { color:#f87171; }
+/* Repository → worktree sidebar + selection-scoped main layout */
+.layout { display:flex; align-items:stretch; min-height:calc(100vh - 62px); }
+.layout main { flex:1; min-width:0; max-width:none; margin:0; overflow:auto; }
+.sidebar { flex:0 0 264px; border-right:1px solid var(--border); background:var(--surface); overflow:auto; padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
+.sb-repo { display:flex; flex-direction:column; }
+.sb-repo-row { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; cursor:pointer; user-select:none; }
+.sb-repo-row:hover { background:color-mix(in srgb,var(--fg) 6%,transparent); }
+.sb-repo.selected > .sb-repo-row { background:color-mix(in srgb,var(--accent) 16%,transparent); }
+.sb-repo.active-ancestor > .sb-repo-row { background:color-mix(in srgb,var(--accent) 8%,transparent); }
+.sb-chevron { border:none; background:none; color:var(--muted); font-size:0.62rem; line-height:1; padding:2px 4px; cursor:pointer; border-radius:4px; }
+.sb-chevron:hover { color:var(--accent); }
+.sb-repo-icon { font-size:0.85rem; }
+.sb-repo-name { font-family:ui-monospace,monospace; font-size:0.82rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sb-count { margin-left:auto; font-size:0.68rem; color:var(--muted); background:color-mix(in srgb,var(--muted) 16%,transparent); border-radius:999px; padding:1px 8px; min-width:20px; text-align:center; }
+.sb-leaves { display:flex; flex-direction:column; gap:1px; padding:2px 0 6px 10px; }
+.sb-leaf { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:none; background:none; color:var(--fg); padding:6px 8px; border-radius:7px; cursor:pointer; }
+.sb-leaf:hover { background:color-mix(in srgb,var(--fg) 6%,transparent); }
+.sb-leaf.selected { background:color-mix(in srgb,var(--accent) 18%,transparent); }
+.sb-leaf-main { display:flex; flex-direction:column; min-width:0; flex:1; }
+.sb-leaf-title { font-family:ui-monospace,monospace; font-size:0.76rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sb-leaf-sub { font-size:0.66rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sb-pill { font-size:0.6rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--accent); background:color-mix(in srgb,var(--accent) 16%,transparent); border-radius:999px; padding:1px 7px; }
+.sb-diff-glyph { color:var(--muted); font-size:0.8rem; opacity:.6; }
+.sb-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; display:inline-block; }
+.sb-dot.done { background:var(--done); }
+.sb-dot.idle { background:var(--pending); }
+.sb-status.spinner { margin-right:0; }
+.select-hint { max-width:420px; margin:0 auto; }
+
+/* Inline live worktree diff panel (replaces the on-demand modal) */
+.diff-panel { display:flex; flex-direction:column; height:calc(100vh - 62px); }
+.diff-panel-head { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); }
+.diff-panel-title { font-family:ui-monospace,monospace; font-size:0.82rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.diff-panel .diff-body { flex:1; min-height:0; }
+.diff-stale { font-size:0.7rem; color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 45%,var(--border)); background:color-mix(in srgb,var(--warn) 12%,transparent); border-radius:6px; padding:2px 9px; }
+
+/* Worktree-detail: change chain(s) pinned above the worktree's single live diff */
+.worktree-detail { display:flex; flex-direction:column; height:calc(100vh - 62px); }
+.worktree-detail-nodes { flex:0 0 auto; max-height:45%; overflow:auto; padding:16px 20px 4px; }
+.worktree-detail .diff-panel { height:auto; flex:1; min-height:0; }

@@ -38,6 +38,18 @@ export function makeStatus(changes: Change[], repoCount = 1): StatusResult {
   return { generatedAt: "2026-01-01T00:00:00.000Z", repoCount, changes };
 }
 
+// The default repositoryId produced by makeChange; the change cards for a repo
+// only render once that repository is the active sidebar Selection.
+export const DEFAULT_REPO_ID = "/Code/repo-a/.git";
+
+// Seed a repo Selection (and expand it) in localStorage before render, so a
+// test that asserts change-card / artifact behaviour sees the cards in the main
+// panel under the new selection-scoped layout.
+export function selectRepo(repositoryId: string = DEFAULT_REPO_ID) {
+  localStorage.setItem("osb-selection", JSON.stringify({ kind: "repo", repositoryId }));
+  localStorage.setItem("osb-expanded", JSON.stringify([repositoryId]));
+}
+
 export type MockApi = {
   getStatus: ReturnType<typeof vi.fn>;
   readFile: ReturnType<typeof vi.fn>;
@@ -48,6 +60,7 @@ export type MockApi = {
   setSettings: ReturnType<typeof vi.fn>;
   chooseDirectory: ReturnType<typeof vi.fn>;
   openPath: ReturnType<typeof vi.fn>;
+  openFile: ReturnType<typeof vi.fn>;
   onNotificationSound: ReturnType<typeof vi.fn>;
   install: ReturnType<typeof vi.fn>;
   doctor: ReturnType<typeof vi.fn>;
@@ -64,6 +77,7 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     setSettings: vi.fn().mockResolvedValue({ ok: true, root: "/Code", notifications: "enabled", targets: [] }),
     chooseDirectory: vi.fn().mockResolvedValue({ path: null }),
     openPath: vi.fn().mockResolvedValue({ ok: true }),
+    openFile: vi.fn().mockResolvedValue({ ok: true }),
     onNotificationSound: vi.fn().mockReturnValue(() => {}),
     install: vi.fn().mockResolvedValue({ steps: [] }),
     doctor: vi.fn().mockResolvedValue({ checks: [] }),
