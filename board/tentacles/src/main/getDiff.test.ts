@@ -139,10 +139,10 @@ describe("parseDiff — raw unified diff → structured model", () => {
     expect(files[0]!.status).toBe("modified");
     const lines = files[0]!.hunks.flatMap((h) => h.lines);
     expect(lines).toEqual([
-      { kind: "context", text: "a" },
-      { kind: "del", text: "b" },
-      { kind: "add", text: "B" },
-      { kind: "context", text: "c" },
+      { kind: "context", text: "a", oldNo: 1, newNo: 1 },
+      { kind: "del", text: "b", oldNo: 2 },
+      { kind: "add", text: "B", newNo: 2 },
+      { kind: "context", text: "c", oldNo: 3, newNo: 3 },
     ]);
   });
 
@@ -249,6 +249,127 @@ describe("parseDiff — raw unified diff → structured model", () => {
     ].join("\n");
     const files = parseDiff(raw);
     expect(files.map((f) => f.path)).toEqual(["one.txt", "two.txt"]);
+  });
+});
+
+describe("parseDiff — old/new line numbers per hunk", () => {
+  it("numbers context on both sides, deletion old-only, addition new-only", () => {
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,3 +1,3 @@",
+      " a",
+      "-b",
+      "+B",
+      " c",
+    ].join("\n");
+    const lines = parseDiff(raw)[0]!.hunks[0]!.lines;
+    expect(lines).toEqual([
+      { kind: "context", text: "a", oldNo: 1, newNo: 1 },
+      { kind: "del", text: "b", oldNo: 2 },
+      { kind: "add", text: "B", newNo: 2 },
+      { kind: "context", text: "c", oldNo: 3, newNo: 3 },
+    ]);
+  });
+
+  it("re-seeds numbering from each hunk's own header across a skipped region", () => {
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,2 +1,2 @@",
+      " x",
+      "-y",
+      "+Y",
+      "@@ -50,2 +50,2 @@",
+      " p",
+      "-q",
+      "+Q",
+    ].join("\n");
+    const hunks = parseDiff(raw)[0]!.hunks;
+    expect(hunks[0]!.lines).toEqual([
+      { kind: "context", text: "x", oldNo: 1, newNo: 1 },
+      { kind: "del", text: "y", oldNo: 2 },
+      { kind: "add", text: "Y", newNo: 2 },
+    ]);
+    // The second hunk starts at 50, not continuing from the first hunk's end.
+    expect(hunks[1]!.lines).toEqual([
+      { kind: "context", text: "p", oldNo: 50, newNo: 50 },
+      { kind: "del", text: "q", oldNo: 51 },
+      { kind: "add", text: "Q", newNo: 51 },
+    ]);
+  });
+
+  it("retains each hunk's header start/count for the seeding rule and the header row", () => {
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -50,2 +60,3 @@ func context is dropped",
+      " p",
+      "+r",
+      " q",
+    ].join("\n");
+    const hunk = parseDiff(raw)[0]!.hunks[0]!;
+    expect(hunk.oldStart).toBe(50);
+    expect(hunk.oldCount).toBe(2);
+    expect(hunk.newStart).toBe(60);
+    expect(hunk.newCount).toBe(3);
+  });
+
+  it("defaults an omitted hunk count to 1 (git's `@@ -1 +1 @@` form)", () => {
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1 +1 @@",
+      "-x",
+      "+y",
+    ].join("\n");
+    const hunk = parseDiff(raw)[0]!.hunks[0]!;
+    expect(hunk.oldCount).toBe(1);
+    expect(hunk.newCount).toBe(1);
+    expect(hunk.lines).toEqual([
+      { kind: "del", text: "x", oldNo: 1 },
+      { kind: "add", text: "y", newNo: 1 },
+    ]);
+  });
+
+  it("does not number or count the `\\ No newline at end of file` marker", () => {
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,2 +1,2 @@",
+      " a",
+      "-b",
+      "+B",
+      "\\ No newline at end of file",
+    ].join("\n");
+    const lines = parseDiff(raw)[0]!.hunks[0]!.lines;
+    // The marker produces no line, and the addition keeps new position 2.
+    expect(lines).toEqual([
+      { kind: "context", text: "a", oldNo: 1, newNo: 1 },
+      { kind: "del", text: "b", oldNo: 2 },
+      { kind: "add", text: "B", newNo: 2 },
+    ]);
+  });
+
+  it("fails loudly when a hunk's consumed line counts disagree with its header (checksum)", () => {
+    // Header claims 3 old / 3 new lines, but only 2 of each are present — a
+    // corrupt/mis-generated diff. The count checksum must throw rather than
+    // silently emit potentially wrong numbering.
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,3 +1,3 @@",
+      " a",
+      "-b",
+      "+B",
+    ].join("\n");
+    expect(() => parseDiff(raw)).toThrow(/mismatch/i);
   });
 });
 

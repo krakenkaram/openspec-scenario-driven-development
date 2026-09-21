@@ -441,6 +441,8 @@ export function parseDiff(raw: string): DiffFile[] {
   const files: DiffFile[] = [];
   let file: DiffFile | null = null;
   let hunk: DiffHunk | null = null;
+  let oldNo = 0;
+  let newNo = 0;
 
   for (const line of String(raw ?? "").split("\n")) {
     if (line.startsWith("diff --git")) {
@@ -467,15 +469,52 @@ export function parseDiff(raw: string): DiffFile[] {
       continue;
     }
     if (line.startsWith("@@")) {
-      hunk = { lines: [] };
+      // @@ -oldStart[,oldCount] +newStart[,newCount] @@; an omitted count is 1
+      // (git writes `@@ -1 +1 @@` for a single-line hunk). Seed the walk from the
+      // header so each hunk re-bases and numbers never run across a skipped gap.
+      // A line that starts "@@" but does not parse is left header-less (no seeding
+      // fields), which the checksum pass below skips.
+      const m = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      if (m) {
+        const oldStart = parseInt(m[1] as string, 10);
+        const oldCount = m[2] !== undefined ? parseInt(m[2], 10) : 1;
+        const newStart = parseInt(m[3] as string, 10);
+        const newCount = m[4] !== undefined ? parseInt(m[4], 10) : 1;
+        hunk = { lines: [], oldStart, oldCount, newStart, newCount };
+        oldNo = oldStart;
+        newNo = newStart;
+      } else {
+        hunk = { lines: [] };
+        oldNo = 0;
+        newNo = 0;
+      }
       file.hunks.push(hunk);
       continue;
     }
     if (line.startsWith("\\")) continue;
     if (!hunk) continue;
-    if (line.startsWith("+")) hunk.lines.push({ kind: "add", text: line.slice(1) });
-    else if (line.startsWith("-")) hunk.lines.push({ kind: "del", text: line.slice(1) });
-    else if (line.startsWith(" ")) hunk.lines.push({ kind: "context", text: line.slice(1) });
+    if (line.startsWith("+")) hunk.lines.push({ kind: "add", text: line.slice(1), newNo: newNo++ });
+    else if (line.startsWith("-")) hunk.lines.push({ kind: "del", text: line.slice(1), oldNo: oldNo++ });
+    else if (line.startsWith(" ")) hunk.lines.push({ kind: "context", text: line.slice(1), oldNo: oldNo++, newNo: newNo++ });
+  }
+
+  // Count checksum: each hunk's old side (context + deletions) must total its
+  // header's oldCount and its new side (context + additions) must total newCount.
+  // A mismatch means the diff is malformed or the walk is wrong, so throw rather
+  // than surface silently mis-numbered lines — getDiff/getFileDiff wrap parseDiff
+  // and turn the throw into an { ok: false } result.
+  for (const f of files) {
+    for (const h of f.hunks) {
+      if (h.oldStart === undefined) continue;
+      const oldConsumed = h.lines.filter((l) => l.kind !== "add").length;
+      const newConsumed = h.lines.filter((l) => l.kind !== "del").length;
+      if (oldConsumed !== h.oldCount || newConsumed !== h.newCount) {
+        throw new Error(
+          `diff hunk line-count mismatch: header @@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@ ` +
+            `but consumed old=${oldConsumed} new=${newConsumed}`
+        );
+      }
+    }
   }
   return files;
 }
