@@ -704,5 +704,16 @@ describe("the inline diff separates hunks with a header row", () => {
     const secondHeader = headers.find((h) => h.textContent?.includes("@@ -50,2 +50,2 @@")) as HTMLElement;
     expect(secondHeader.querySelector(".diff-gutter-old")?.textContent).toBe("");
     expect(secondHeader.querySelector(".diff-gutter-new")?.textContent).toBe("");
+
+    // the range sits in the code column: the row preserves the full
+    // [old#][new#][sign][code] structure, so a blank sign cell precedes the text
+    expect(secondHeader.querySelector(".diff-sign")?.textContent).toBe("");
+    const order = [...secondHeader.children].map((c) => (c as HTMLElement).className);
+    expect(order).toEqual([
+      "diff-gutter diff-gutter-old",
+      "diff-gutter diff-gutter-new",
+      "diff-sign",
+      "diff-text",
+    ]);
   });
 });

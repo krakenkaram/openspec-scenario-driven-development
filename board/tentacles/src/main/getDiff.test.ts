@@ -355,6 +355,22 @@ describe("parseDiff — old/new line numbers per hunk", () => {
       { kind: "add", text: "B", newNo: 2 },
     ]);
   });
+
+  it("fails loudly when a hunk's consumed line counts disagree with its header (checksum)", () => {
+    // Header claims 3 old / 3 new lines, but only 2 of each are present — a
+    // corrupt/mis-generated diff. The count checksum must throw rather than
+    // silently emit potentially wrong numbering.
+    const raw = [
+      "diff --git a/file.txt b/file.txt",
+      "--- a/file.txt",
+      "+++ b/file.txt",
+      "@@ -1,3 +1,3 @@",
+      " a",
+      "-b",
+      "+B",
+    ].join("\n");
+    expect(() => parseDiff(raw)).toThrow(/mismatch/i);
+  });
 });
 
 describe("getFileDiff — full-context diff of one file", () => {

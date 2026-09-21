@@ -12,6 +12,7 @@ function FileLines({ file }: { file: DiffFile }) {
             <div className="diff-line diff-hunk-header" key="header">
               <span className="diff-gutter diff-gutter-old" style={{ userSelect: "none" }} />
               <span className="diff-gutter diff-gutter-new" style={{ userSelect: "none" }} />
+              <span className="diff-sign" />
               <span className="diff-text">{`@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@`}</span>
             </div>
           )}
