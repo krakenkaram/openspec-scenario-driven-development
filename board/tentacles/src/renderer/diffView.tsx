@@ -153,9 +153,10 @@ export function DiffView({
 
   // When the live diff refreshes (the inline panel re-polls every 3s), re-fetch
   // the full contents of any expanded file so the expanded view stays live rather
-  // than showing a stale snapshot — and so a full fetch that was missed or came
-  // back empty on the first expand is retried on the next refresh instead of
-  // silently leaving the hunk view in place.
+  // than showing a stale snapshot. A refresh that comes back empty/failed (null)
+  // DROPS the cached full file so `shown` falls back to the current hunk view
+  // rather than displaying stale content indefinitely — and a full fetch that was
+  // missed on the first expand is retried on the next refresh.
   useEffect(() => {
     if (!result || !result.ok) return;
     const present = new Set(result.files.map((f) => f.path));
@@ -163,7 +164,14 @@ export function DiffView({
     for (const path of expanded) {
       if (!present.has(path)) continue;
       void getFullFile(path).then((full) => {
-        if (!cancelled && full) setFullByPath((prev) => ({ ...prev, [path]: full }));
+        if (cancelled) return;
+        setFullByPath((prev) => {
+          if (full) return { ...prev, [path]: full };
+          if (!(path in prev)) return prev;
+          const next = { ...prev };
+          delete next[path];
+          return next;
+        });
       });
     }
     return () => {

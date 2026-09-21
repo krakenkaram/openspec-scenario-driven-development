@@ -274,6 +274,49 @@ describe("the inline diff degrades gracefully", () => {
     expect(screen.getByText("changed-v2")).toBeTruthy();
   });
 
+  it("drops the expanded full file and falls back to the hunk view when a refresh returns empty/failed", async () => {
+    vi.useFakeTimers();
+    const compact = {
+      ok: true as const,
+      files: [{ path: "big.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "hunk-line" }] }] }],
+    };
+    const full = {
+      ok: true as const,
+      files: [{ path: "big.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "context" as const, text: "full-only-line" }, { kind: "add" as const, text: "hunk-line" }] }] }],
+    };
+    // first full fetch succeeds; the refresh after the poll fails (ok:false).
+    const getFileDiff = vi.fn().mockResolvedValueOnce(full).mockResolvedValue({ ok: false as const, error: "gone" });
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn(() => Promise.resolve({ ok: true as const, files: compact.files.map((f) => ({ ...f })) })),
+      getFileDiff,
+    });
+
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // expand → full shows
+    fireEvent.click(screen.getByRole("button", { name: "Expand full file" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("full-only-line")).toBeTruthy();
+
+    // the 3s refresh returns a failed full-file result → the stale full file is
+    // dropped and the compact hunk view is shown instead (never stale content).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.queryByText("full-only-line")).toBeNull();
+    expect(screen.getByText("hunk-line")).toBeTruthy();
+  });
+
   it("shows a loading state on first load until the first diff resolves", async () => {
     let resolveDiff!: (v: typeof diffModel) => void;
     const getDiff = vi.fn(
@@ -452,6 +495,27 @@ describe("clicking a diffed file name opens it in the OS-default app", () => {
     await user.click(await screen.findByRole("button", { name: "src/x.ts" }));
 
     expect(api.openFile).toHaveBeenCalledWith("/Code/repo-a", "src/x.ts");
+  });
+
+  it("surfaces an error when the file cannot be opened", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const api = mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [{ path: "src/x.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "y" }] }] }],
+      }),
+      openFile: vi.fn().mockResolvedValue({ ok: false, error: "no application knows how to open" }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await user.click(await screen.findByRole("button", { name: "src/x.ts" }));
+
+    expect(api.openFile).toHaveBeenCalledWith("/Code/repo-a", "src/x.ts");
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining("no application knows how to open")));
+    alertSpy.mockRestore();
   });
 });
 

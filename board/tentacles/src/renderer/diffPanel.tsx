@@ -74,7 +74,14 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
         <DiffView
           result={result}
           getFullFile={getFullFile}
-          onOpenFile={(rel) => void window.electronAPI.openFile(repoPath, rel)}
+          onOpenFile={async (rel) => {
+            try {
+              const res = await window.electronAPI.openFile(repoPath, rel);
+              if (!res.ok) window.alert("Could not open file: " + res.error);
+            } catch {
+              window.alert("Could not open file.");
+            }
+          }}
         />
       </div>
     </div>
