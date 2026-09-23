@@ -116,6 +116,7 @@ app.whenReady().then(() => {
     nativeImage,
     setup: {
       repoRoot: core.resolveBundleRoot(),
+      schemasRoot: core.resolveSchemasRoot(app.isPackaged, process.resourcesPath, core.resolveBundleRoot()),
       home: os.homedir(),
       exec: makeInstallExecutor(),
       probe: makeDoctorProbe(),

@@ -230,58 +230,101 @@ export function deriveSchemaInfo(
   };
 }
 
+// A safe schema name is a single path component — no separators, no traversal,
+// not "." or "..". Enforced main-side before any filesystem operation so a
+// renderer-supplied name (untrusted, ADR-0002) can never escape the user store.
+export function isSafeSchemaName(name: string): boolean {
+  return (
+    typeof name === "string" &&
+    name.length > 0 &&
+    !name.includes("/") &&
+    !name.includes("\\") &&
+    !name.includes("\0") &&
+    name !== "." &&
+    name !== ".." &&
+    path.basename(name) === name
+  );
+}
+
 // Resolve where a schema install copies FROM and TO, or the reason it cannot.
-// `paths` is the name → folder map from `openspec schema which`; the source is the
-// app's local schema folder and the destination is `<userStore>/<name>`. Pure so
-// the resolution (including the unknown-schema error) is unit-tested; installSchema
-// then performs the copy.
+// Pure so the whole authorization is unit-tested: the name must be a safe single
+// component; the schema must be a `project` (app-owned) schema — never a package
+// or already-global one, so a hidden renderer button is not relied on as the
+// guard; and its folder must have resolved. Destination is `<userStore>/<name>`.
 export function planSchemaInstall(
   name: string,
-  paths: Record<string, string>,
+  source: string,
+  from: string | undefined,
   userStoreDir: string
 ): { from: string; to: string } | { error: string } {
-  if (!name) return { error: "no schema" };
-  const from = paths[name];
+  if (!isSafeSchemaName(name)) return { error: "invalid schema name" };
   if (!from) return { error: "unknown schema" };
+  if (source !== "project") return { error: "only local (app) schemas can be installed" };
   return { from, to: path.join(userStoreDir, name) };
 }
 
+// Copy a resolved app schema folder into the CLI's user store. Split from the CLI
+// resolution so the real copy — with its authorization and already-installed guard
+// — is unit-tested against temp dirs without shelling out. Dereferences symlinks so
+// the installed schema is self-contained.
+export function copySchemaIntoStore(
+  name: string,
+  source: string,
+  from: string | undefined,
+  home: string
+): SchemaActionResult {
+  const plan = planSchemaInstall(name, source, from, userSchemasDir(home));
+  if ("error" in plan) return { ok: false, error: plan.error };
+  try {
+    if (fs.existsSync(plan.to)) return { ok: false, error: "already installed" };
+    fs.mkdirSync(path.dirname(plan.to), { recursive: true });
+    fs.cpSync(plan.from, plan.to, { recursive: true, dereference: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) };
+  }
+}
+
 // Install a local (app) schema into the CLI's user store so it is usable for work
-// in every repo. Resolves the schema's folder via `openspec schema which` (from
-// the repo cwd, so project schemas resolve) and copies it to `<userStore>/<name>`.
-// Refuses if the destination already exists (already installed). The copy
-// dereferences symlinks so the installed schema is self-contained.
+// in every repo. Resolves the schema's source + folder via `openspec schema which
+// <name>` (from the app-bundle cwd, so project schemas resolve) then copies it.
+// Only a `project` schema is installable (enforced in planSchemaInstall).
 export function installSchema(name: string, cwd: string | undefined, home: string): Promise<SchemaActionResult> {
   return new Promise((resolve) => {
-    if (!name) return resolve({ ok: false, error: "no schema" });
+    if (!isSafeSchemaName(name)) return resolve({ ok: false, error: "invalid schema name" });
     execFile(
       "openspec",
-      ["schema", "which", "--all", "--json"],
+      ["schema", "which", name, "--json"],
       { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout) => {
         if (err && !stdout) return resolve({ ok: false, error: "could not resolve schema" });
-        const plan = planSchemaInstall(name, parseSchemaPaths(String(stdout)), userSchemasDir(home));
-        if ("error" in plan) return resolve({ ok: false, error: plan.error });
+        let source = "";
+        let from: string | undefined;
         try {
-          if (fs.existsSync(plan.to)) return resolve({ ok: false, error: "already installed" });
-          fs.mkdirSync(path.dirname(plan.to), { recursive: true });
-          fs.cpSync(plan.from, plan.to, { recursive: true, dereference: true });
-          resolve({ ok: true });
-        } catch (e) {
-          resolve({ ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+          const d = JSON.parse(String(stdout)) as { source?: unknown; path?: unknown };
+          if (typeof d.source === "string") source = d.source;
+          if (typeof d.path === "string") from = d.path;
+        } catch {
+          /* fall through: from stays undefined -> unknown schema */
         }
+        resolve(copySchemaIntoStore(name, source, from, home));
       }
     );
   });
 }
 
 // Uninstall a schema previously installed into the CLI's user store: delete
-// `<userStore>/<name>`. The target is always under the user store, so this never
-// touches a package or project (app) copy. Refuses when nothing is installed there.
+// `<userStore>/<name>`. The name must be a safe single component AND the resolved
+// target must be an immediate child of the canonical user store, so a traversal
+// name can never delete anything outside it. Refuses when nothing is installed.
 export function uninstallSchema(name: string, home: string): Promise<SchemaActionResult> {
   return new Promise((resolve) => {
-    if (!name) return resolve({ ok: false, error: "no schema" });
-    const target = path.join(userSchemasDir(home), name);
+    if (!isSafeSchemaName(name)) return resolve({ ok: false, error: "invalid schema name" });
+    const store = userSchemasDir(home);
+    const target = path.join(store, name);
+    if (path.dirname(path.resolve(target)) !== path.resolve(store)) {
+      return resolve({ ok: false, error: "invalid schema name" });
+    }
     try {
       if (!fs.existsSync(target)) return resolve({ ok: false, error: "not installed" });
       fs.rmSync(target, { recursive: true, force: true });
@@ -293,23 +336,28 @@ export function uninstallSchema(name: string, home: string): Promise<SchemaActio
 }
 
 // Reveal a change's schema definition (its schema.yaml) in the OS file browser.
-// The schema NAME and the change's repo come from the board, never a free path:
-// the folder is resolved via `openspec schema which <name>` from the repo (so a
-// project schema resolves to the repo copy the change actually uses), and
-// `<folder>/schema.yaml` is revealed via the injected opener (shell.showItemInFolder).
-// A schema that cannot be resolved, or a missing schema.yaml, is reported rather
-// than throwing.
+// Both inputs are untrusted (ADR-0002): `repoPath` is matched against a currently
+// discovered repository (mirroring openWorktree/openRepoFile) and the CLI is run
+// from that MATCHED main-process path, never the raw renderer string; `name` must
+// be a safe single component. The folder is resolved via `openspec schema which
+// <name>` and `<folder>/schema.yaml` revealed via the injected opener
+// (shell.showItemInFolder). Unknown repo/schema or a missing schema.yaml is
+// reported rather than throwing; the shell is never touched on a rejected input.
 export function openSchemaFile(
+  args: Args,
   name: string,
   repoPath: string | undefined,
   opener: PathOpener
 ): Promise<OpenPathResult> {
   return new Promise((resolve) => {
-    if (!name) return resolve({ ok: false, error: "no schema" });
+    if (!isSafeSchemaName(name)) return resolve({ ok: false, error: "invalid schema name" });
+    const repos = discoverRepos(args);
+    const match = repos.find((r) => path.resolve(r) === path.resolve(repoPath || ""));
+    if (!match) return resolve({ ok: false, error: "unknown repo or worktree" });
     execFile(
       "openspec",
       ["schema", "which", name, "--json"],
-      { cwd: repoPath, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      { cwd: path.resolve(match), timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
       async (err, stdout) => {
         if (err && !stdout) return resolve({ ok: false, error: "could not resolve schema" });
         let folder: string | undefined;
@@ -1385,7 +1433,18 @@ export function resolveBundleRoot(
   return null;
 }
 
-// Pure install planner. Returns the ordered, deduplicated step list for the
+// The directory schema CLI commands (listing / installing Local schemas) run
+// from. In a packaged app the app schemas ship as an extraResource under
+// process.resourcesPath (which then contains `openspec/schemas`), so that is the
+// cwd; in development it is the resolved source-checkout bundle root. Pure so both
+// branches are observable in a unit test.
+export function resolveSchemasRoot(
+  isPackaged: boolean,
+  resourcesPath: string,
+  bundleRoot: string | null
+): string | null {
+  return isPackaged ? resourcesPath || null : bundleRoot;
+}
 // selected targets: each target's file copies, plus the shared OpenSpec global
 // slice, with Kiro Crew adding the host-wiring + restart steps on top of Kiro.
 // Steps are keyed by id and deduplicated so a multi-select install is idempotent.
@@ -1498,6 +1557,8 @@ export default {
   listSchemas,
   deriveSchemaInfo,
   planSchemaInstall,
+  isSafeSchemaName,
+  copySchemaIntoStore,
   installSchema,
   uninstallSchema,
   openSchemaFile,
@@ -1519,6 +1580,7 @@ export default {
   resolveRoot,
   parseTargets,
   resolveBundleRoot,
+  resolveSchemasRoot,
   planInstall,
   planDoctorChecks,
   OPENSPEC_WORKFLOWS,

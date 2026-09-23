@@ -85,7 +85,7 @@ export interface BoardCore {
   listSchemas(cwd?: string, home?: string): Promise<SchemaInfo[]>;
   installSchema(name: string, cwd: string | undefined, home: string): Promise<SchemaActionResult>;
   uninstallSchema(name: string, home: string): Promise<SchemaActionResult>;
-  openSchemaFile(name: string, repoPath: string | undefined, opener: OpenPath): Promise<OpenPathResult>;
+  openSchemaFile(args: Args, name: string, repoPath: string | undefined, opener: OpenPath): Promise<OpenPathResult>;
 }
 
 export interface WindowOpts {
@@ -155,6 +155,7 @@ export type DoctorProbe = (check: DoctorCheck) => Promise<{ ok: boolean; reason?
 
 export interface SetupDeps {
   repoRoot: string | null;
+  schemasRoot: string | null;
   home: string;
   exec: InstallExecutor;
   probe: DoctorProbe;
@@ -255,10 +256,10 @@ export function makeHandlers(
       if (!openPath) return { ok: false, error: "open unavailable" };
       return core.openRepoFile(getArgs(), repoPath, filePath, openPath);
     },
-    listSchemas: (): Promise<SchemaInfo[]> => core.listSchemas(setup?.repoRoot ?? undefined, setup?.home),
+    listSchemas: (): Promise<SchemaInfo[]> => core.listSchemas(setup?.schemasRoot ?? undefined, setup?.home),
     installSchema: async (_event: IpcMainInvokeEvent, name: string): Promise<SchemaActionResult> => {
       if (!setup) return { ok: false, error: "setup unavailable" };
-      return core.installSchema(name, setup.repoRoot ?? undefined, setup.home);
+      return core.installSchema(name, setup.schemasRoot ?? undefined, setup.home);
     },
     uninstallSchema: async (_event: IpcMainInvokeEvent, name: string): Promise<SchemaActionResult> => {
       if (!setup) return { ok: false, error: "setup unavailable" };
@@ -266,7 +267,7 @@ export function makeHandlers(
     },
     openSchemaFile: async (_event: IpcMainInvokeEvent, name: string, repoPath: string): Promise<OpenPathResult> => {
       if (!reveal) return { ok: false, error: "reveal unavailable" };
-      return core.openSchemaFile(name, repoPath, reveal);
+      return core.openSchemaFile(getArgs(), name, repoPath, reveal);
     },
   };
 }

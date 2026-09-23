@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSchemas, parseSchemaPaths, deriveSchemaInfo, planSchemaInstall } from "./core";
+import { parseSchemas, parseSchemaPaths, deriveSchemaInfo, planSchemaInstall, isSafeSchemaName } from "./core";
 import type { RawSchema } from "./core";
 
 // A representative `openspec schemas --json` payload (trimmed): an array of
@@ -129,22 +129,40 @@ describe("deriveSchemaInfo — Global/Local pill + Install/Uninstall action", ()
   });
 });
 
-describe("planSchemaInstall — resolve install source and destination", () => {
-  const store = "/home/u/.local/share/openspec/schemas";
-  const paths = { refactor: "/repo/openspec/schemas/refactor" };
+describe("isSafeSchemaName — single-component names only", () => {
+  it("accepts a plain single-component name", () => {
+    expect(isSafeSchemaName("atdd-driven")).toBe(true);
+    expect(isSafeSchemaName("refactor")).toBe(true);
+  });
 
-  it("returns the app folder as source and <store>/<name> as destination", () => {
-    expect(planSchemaInstall("refactor", paths, store)).toEqual({
+  it("rejects empty, dot, traversal, and separator names", () => {
+    for (const bad of ["", ".", "..", "../x", "a/b", "a\\b", "../../etc", "\0evil"]) {
+      expect(isSafeSchemaName(bad)).toBe(false);
+    }
+  });
+});
+
+describe("planSchemaInstall — resolve + authorize install source and destination", () => {
+  const store = "/home/u/.local/share/openspec/schemas";
+
+  it("returns the app folder as source and <store>/<name> as destination for a project schema", () => {
+    expect(planSchemaInstall("refactor", "project", "/repo/openspec/schemas/refactor", store)).toEqual({
       from: "/repo/openspec/schemas/refactor",
       to: "/home/u/.local/share/openspec/schemas/refactor",
     });
   });
 
-  it("errors when the schema name is empty", () => {
-    expect(planSchemaInstall("", paths, store)).toEqual({ error: "no schema" });
+  it("rejects an unsafe (traversal) schema name", () => {
+    expect(planSchemaInstall("../../evil", "project", "/x", store)).toEqual({ error: "invalid schema name" });
+  });
+
+  it("rejects a non-project (package or already-global) schema", () => {
+    expect(planSchemaInstall("spec-driven", "package", "/pkg/spec-driven", store)).toEqual({
+      error: "only local (app) schemas can be installed",
+    });
   });
 
   it("errors when the schema folder could not be resolved", () => {
-    expect(planSchemaInstall("ghost", paths, store)).toEqual({ error: "unknown schema" });
+    expect(planSchemaInstall("ghost", "project", undefined, store)).toEqual({ error: "unknown schema" });
   });
 });
