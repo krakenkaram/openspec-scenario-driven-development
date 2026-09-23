@@ -145,7 +145,17 @@ export function ChangeCard({
         {showBranch && c.branch ? <span className="branch-chip">{c.branch}</span> : null}
         {typeBadge}
         {badge}
-        <span className="crepo">{c.schema}</span>
+        <button
+          type="button"
+          className="crepo crepo-link"
+          title={`Reveal the ${c.schema} schema.yaml in Finder`}
+          onClick={async () => {
+            const res = await window.electronAPI.openSchemaFile(c.schema, c.repoPath);
+            if (!res.ok) window.alert("Could not open schema: " + res.error);
+          }}
+        >
+          {c.schema}
+        </button>
         {c.pr && (
           <a
             className="pr-btn"

@@ -13,6 +13,7 @@ function fakeSetup(over: Partial<SetupDeps> = {}): { setup: SetupDeps; dispatche
   const dispatched: InstallStep[] = [];
   const setup: SetupDeps = {
     repoRoot: REPO,
+    schemasRoot: REPO,
     home: HOME,
     exec: vi.fn(async (step: InstallStep) => {
       dispatched.push(step);

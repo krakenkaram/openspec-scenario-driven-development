@@ -64,6 +64,10 @@ export type MockApi = {
   onNotificationSound: ReturnType<typeof vi.fn>;
   install: ReturnType<typeof vi.fn>;
   doctor: ReturnType<typeof vi.fn>;
+  listSchemas: ReturnType<typeof vi.fn>;
+  installSchema: ReturnType<typeof vi.fn>;
+  uninstallSchema: ReturnType<typeof vi.fn>;
+  openSchemaFile: ReturnType<typeof vi.fn>;
 };
 
 export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
@@ -81,6 +85,10 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     onNotificationSound: vi.fn().mockReturnValue(() => {}),
     install: vi.fn().mockResolvedValue({ steps: [] }),
     doctor: vi.fn().mockResolvedValue({ checks: [] }),
+    listSchemas: vi.fn().mockResolvedValue([]),
+    installSchema: vi.fn().mockResolvedValue({ ok: true }),
+    uninstallSchema: vi.fn().mockResolvedValue({ ok: true }),
+    openSchemaFile: vi.fn().mockResolvedValue({ ok: true }),
     ...over,
   } as unknown as MockApi;
   (window as unknown as { electronAPI: ElectronAPI }).electronAPI = api as unknown as ElectronAPI;

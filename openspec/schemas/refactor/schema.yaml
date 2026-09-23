@@ -1,0 +1,125 @@
+name: refactor
+version: 1
+description: >
+  A behaviour-preserving refactor workflow. Refactoring restructures
+  existing code without changing any observable behaviour, so there is
+  no grill, specs, or design phase — only a proposal that captures why
+  and what is being restructured, and a task list of vertical slices
+  that reshape the code while every existing test stays green.
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: |
+      Captures WHY this refactor is worth doing and WHAT structural
+      changes it makes, with no change to observable behaviour.
+    template: proposal.md
+    instruction: >
+      AGENT — required delegation:
+      Delegate this artifact to the `engineer` agent using the current tool's
+      native subagent mechanism. If already running as `engineer`, continue
+      directly instead of creating another Engineer. If the `engineer` agent is
+      unavailable, STOP and tell the user that the package's Engineer adapter is
+      missing; do not produce the artifact with a fallback agent.
+
+      This is a behaviour-preserving refactor. Do NOT interview the user or
+      explore new behaviour, and do NOT introduce new capabilities.
+
+      Keep the proposal minimal:
+      - **Why**: a single sentence on the motivation (readability, duplication,
+        coupling, a seam that is hard to test, etc.).
+      - **What Changes**: structural bullets, each tagged (no behaviour change),
+        naming the shape being moved to.
+      - **Impact**: the modules/files the refactor touches.
+
+      TRIPWIRE: if any change to observable behaviour, a new seam, or a genuine
+      design decision is in scope, this is NOT a refactor — stop and reclassify
+      the change under a behaviour-changing schema (e.g. atdd-driven).
+    requires: []
+
+  - id: tasks
+    generates: tasks.md
+    description: |
+      Breaks the refactor into vertical slices. Each slice first pins any
+      untested existing behaviour with a test (RED/GREEN), then performs the
+      structural change with every test staying green (REFACTOR).
+    template: tasks.md
+    instruction: >
+      AGENT — required delegation:
+      Delegate this artifact to the `engineer` agent using the current tool's
+      native subagent mechanism. If already running as `engineer`, continue
+      directly instead of creating another Engineer. If the `engineer` agent is
+      unavailable, STOP and tell the user that the package's Engineer adapter is
+      missing; do not produce the artifact with a fallback agent.
+
+      THE GOLDEN RULE:
+      A refactor is only safe behind tests. Before restructuring anything,
+      confirm the behaviour in scope is already covered by a behavioural test
+      through the highest available seam. Where coverage is missing, add the
+      pinning test first.
+
+      Structure the tasks as vertical slices:
+      - For each behavioural-test gap, add a RED/GREEN slice that introduces the
+        missing behavioural test through its seam.
+      - Then add a REFACTOR slice that performs the structural change while every
+        test stays green.
+      - Capture the agreed target shape as concrete task steps.
+
+      **IMPORTANT: Follow the template exactly.** The apply phase parses the
+      `- [ ]` checkbox format to track progress. Tasks not using `- [ ]` won't be
+      tracked.
+
+      TRIPWIRE: if pinning existing behaviour exposes a defect you would change,
+      that is a behaviour change — stop and reclassify.
+
+      When you are done, ask the user for feedback & iterate until they approve.
+    requires:
+      - proposal
+
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    AGENT — required delegation:
+      Delegate Apply to the `engineer` agent using the current tool's native
+      subagent mechanism. If already running as `engineer`, continue directly
+      instead of creating another Engineer. If the `engineer` agent is
+      unavailable, STOP and tell the user that the package's Engineer adapter is
+      missing.
+
+      At the end of the assigned Apply scope, the Engineer MUST create a fresh
+      `code-reviewer` subagent, invoke it by agent identity, and preserve the
+      model configured by the reviewer's tool adapter. The Engineer must not
+      review its own work or let the reviewer inherit the Engineer model. Apply
+      is complete only after the reviewer returns `APPROVE`.
+
+      After the reviewer returns `APPROVE`, if the invoking workflow asks for a
+      pull request, delegate to the `pr-writer` agent (which follows the
+      `pr-writing` skill) to author a Conventional Commits title and a body from
+      the standard PR template. The PR writer opens the PR only when explicitly
+      asked and never merges or rewrites published history.
+
+    PREREQUISITE — required skill availability:
+      Before invoking, verify that the exact skills `atdd` & `codebase-design`
+      are available in the current skills list.
+
+      If either are missing:
+      - STOP immediately.
+      - Tell the user which skill is required & missing.
+      - Tell the user that the package's required skill is missing.
+      - Do NOT continue with a manual or best-effort fallback.
+
+    Create a new git branch for the change.
+    Read the context files.
+    Invoke the `atdd` skill using the current tool's skill mechanism & work
+    through each slice one by one, marking tasks complete as you go.
+
+    Apply RED/GREEN/REFACTOR: gap-filling behavioural tests are written
+    test-first (RED) and brought GREEN, then the structural change is performed
+    in REFACTOR with all tests staying green. No existing behavioural test's
+    expected outcome may be weakened, changed, or deleted to force a pass; doing
+    so means behaviour changed, so stop and reclassify.
+
+    Stop after every completed slice & ask the user to review before continuing.
+    Pause if you hit blockers or need clarification.
+    You are not done until all tests pass (unit & integration).

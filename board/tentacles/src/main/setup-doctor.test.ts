@@ -10,7 +10,7 @@ const HOME = "/Users/tester";
 
 function handlersWith(probe: SetupDeps["probe"]) {
   const args: Args = { repos: [], root: "/x", depth: 1 };
-  const setup: SetupDeps = { repoRoot: "/repo", home: HOME, exec: vi.fn(async () => {}), probe };
+  const setup: SetupDeps = { repoRoot: "/repo", schemasRoot: "/repo", home: HOME, exec: vi.fn(async () => {}), probe };
   return makeHandlers(core, () => args, undefined, undefined, undefined, undefined, setup);
 }
 

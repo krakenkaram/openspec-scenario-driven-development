@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { shapeChange, PHASES } from "./core";
+import { shapeChange, ATDD_FALLBACK_PHASES } from "./core";
 import type { GitIdentity } from "./core";
 
 function planningCompleteStatus(repo: string) {
   const artifactPaths: Record<string, { existingOutputPaths: string[]; resolvedOutputPath: string }> = {};
-  for (const id of PHASES) {
+  for (const id of ATDD_FALLBACK_PHASES) {
     const resolved = `${repo}/openspec/changes/c/${id === "specs" ? "specs/cap/spec.md" : id + ".md"}`;
     artifactPaths[id] = { existingOutputPaths: [resolved], resolvedOutputPath: resolved };
   }

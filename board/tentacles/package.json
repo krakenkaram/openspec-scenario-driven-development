@@ -42,6 +42,12 @@
       "build/preload/**",
       "build/renderer/**"
     ],
+    "extraResources": [
+      {
+        "from": "../../openspec/schemas",
+        "to": "openspec/schemas"
+      }
+    ],
     "directories": {
       "output": "dist"
     },

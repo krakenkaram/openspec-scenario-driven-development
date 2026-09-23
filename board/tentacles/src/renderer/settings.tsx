@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { NotificationSetting, ResultRow, Target } from "../shared/ipc-contract";
+import type { NotificationSetting, ResultRow, SchemaInfo, Target } from "../shared/ipc-contract";
 
 const NOTIFICATION_OPTIONS: Array<{ value: NotificationSetting; label: string }> = [
   { value: "enabled", label: "Notifications on" },
@@ -13,7 +13,7 @@ const TARGET_LABELS: { id: Target; label: string }[] = [
   { id: "kiro-crew", label: "Kiro Crew" },
 ];
 
-type Tab = "general" | "setup";
+type Tab = "general" | "setup" | "schemas";
 
 // Map a doctor check row id to its check "kind": the target family it belongs to,
 // or "shared" for the OpenSpec-slice checks every selected target relies on. The
@@ -89,6 +89,8 @@ export function SettingsPanel({
   const [doctorResult, setDoctorResult] = useState<ResultRow[] | null>(null);
   const [doctorTargets, setDoctorTargets] = useState<Target[]>([]);
   const [busy, setBusy] = useState(false);
+  const [schemas, setSchemas] = useState<SchemaInfo[]>([]);
+  const [schemaBusy, setSchemaBusy] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -104,6 +106,13 @@ export function SettingsPanel({
         setTargets(Array.isArray(s.targets) ? s.targets : []);
       } catch {
         /* leave blank */
+      }
+    })();
+    void (async () => {
+      try {
+        setSchemas(await window.electronAPI.listSchemas());
+      } catch {
+        setSchemas([]);
       }
     })();
   }, [open]);
@@ -173,6 +182,23 @@ export function SettingsPanel({
     }
   };
 
+  const applySchemaAction = async (action: "install" | "uninstall", name: string) => {
+    setSchemaBusy(name);
+    setError("");
+    try {
+      const res =
+        action === "install"
+          ? await window.electronAPI.installSchema(name)
+          : await window.electronAPI.uninstallSchema(name);
+      if (!res.ok) setError(`Could not ${action} ${name}: ${res.error}`);
+      else setSchemas(await window.electronAPI.listSchemas());
+    } catch {
+      setError(`Could not ${action} ${name}.`);
+    } finally {
+      setSchemaBusy(null);
+    }
+  };
+
   if (!open) return null;
 
   const doctorHasFailure = !!doctorResult && doctorResult.some((c) => !c.ok);
@@ -209,6 +235,14 @@ export function SettingsPanel({
             onClick={() => setTab("setup")}
           >
             Setup
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "schemas"}
+            className={`settings-tab ${tab === "schemas" ? "active" : ""}`}
+            onClick={() => setTab("schemas")}
+          >
+            Schemas
           </button>
         </div>
 
@@ -281,6 +315,52 @@ export function SettingsPanel({
                 <button className="setup-repair" onClick={() => void runInstall(repairTargets)} disabled={busy}>
                   Fix detected issues
                 </button>
+              )}
+            </div>
+          )}
+
+          {tab === "schemas" && (
+            <div className="schemas-panel">
+              <div className="settings-label">Available schemas</div>
+              {schemas.length === 0 ? (
+                <div className="schemas-empty">No schemas available.</div>
+              ) : (
+                <ul className="schema-list">
+                  {schemas.map((s) => (
+                    <li key={s.name} className="schema-item">
+                      <div className="schema-head">
+                        <span className="schema-name">{s.name}</span>
+                        <span className={`schema-pill schema-pill-${s.scope}`}>
+                          {s.scope === "global" ? "Global" : "Local"}
+                        </span>
+                        <span className="schema-head-spacer" />
+                        {s.action === "install" && (
+                          <button
+                            type="button"
+                            className="schema-action schema-install"
+                            disabled={schemaBusy === s.name}
+                            onClick={() => void applySchemaAction("install", s.name)}
+                          >
+                            {schemaBusy === s.name ? "Installing…" : "Install"}
+                          </button>
+                        )}
+                        {s.action === "uninstall" && (
+                          <button
+                            type="button"
+                            className="schema-action schema-uninstall"
+                            disabled={schemaBusy === s.name}
+                            onClick={() => void applySchemaAction("uninstall", s.name)}
+                          >
+                            {schemaBusy === s.name ? "Uninstalling…" : "Uninstall"}
+                          </button>
+                        )}
+                      </div>
+                      {s.path && <div className="schema-path">{s.path}</div>}
+                      {s.description && <div className="schema-desc">{s.description}</div>}
+                      <div className="schema-steps">{s.artifacts.join(" → ")}</div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           )}

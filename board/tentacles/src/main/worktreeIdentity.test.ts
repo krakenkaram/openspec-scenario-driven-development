@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { shapeChange, PHASES } from "./core";
+import { shapeChange, ATDD_FALLBACK_PHASES } from "./core";
 import type { GitIdentity } from "./core";
 import type { PhaseId } from "../shared/ipc-contract";
 
 function statusWith(present: PhaseId[], isPlanningComplete = false) {
   const artifactPaths: Record<string, { existingOutputPaths: string[]; resolvedOutputPath: string }> = {};
-  for (const id of PHASES) {
+  for (const id of ATDD_FALLBACK_PHASES) {
     const resolved = `/nope/openspec/changes/c/${id === "specs" ? "specs/cap/spec.md" : id + ".md"}`;
     artifactPaths[id] = {
       existingOutputPaths: present.includes(id) ? [resolved] : [],

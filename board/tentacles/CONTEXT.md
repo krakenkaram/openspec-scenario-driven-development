@@ -10,8 +10,10 @@ A single OpenSpec unit of work living under a repo's `openspec/changes/<name>/`.
 shows one card chain per change.
 
 ### Phase
-A stage in a change's lifecycle, shown as a node in the card chain:
-grill → proposal → specs → design → tasks → apply → review → done.
+A stage in a change's lifecycle, shown as a node in the card chain. The **planning phases** are
+defined by the change's schema and vary per schema (e.g. atdd-driven has a `grill` phase that
+spec-driven omits); their ids and order come from `openspec status --json`. They are followed by
+the fixed board nodes **apply → review → done**.
 
 ### Phase complete
 A phase is **complete when the next phase's artifact exists**, not merely when the phase's own

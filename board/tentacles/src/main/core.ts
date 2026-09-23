@@ -29,6 +29,8 @@ import type {
   Pr,
   ReadFileResult,
   OpenPathResult,
+  SchemaInfo,
+  SchemaActionResult,
   StatusResult,
   Target,
 } from "../shared/ipc-contract";
@@ -62,7 +64,12 @@ interface RawPr {
   isDraft?: boolean;
 }
 
-export const PHASES: PhaseId[] = ["grill", "proposal", "specs", "design", "tasks"];
+// The atdd-driven planning artifacts, in declared order. Retained ONLY as the
+// fallback phase list for when `openspec status` yields no artifactPaths (a
+// failed status call), so the chain is never rendered blank. The authoritative
+// per-change phase list is derived from the change's own status artifactPaths
+// keys — see shapeChange.
+export const ATDD_FALLBACK_PHASES: PhaseId[] = ["grill", "proposal", "specs", "design", "tasks"];
 
 export const PRUNE = new Set([
   "node_modules", ".git", ".hg", ".svn", "dist", "build", "out", "target",
@@ -146,6 +153,229 @@ export function runStatus(repo: string, change: string): Promise<RawStatus | nul
         } catch {
           resolve(null);
         }
+      }
+    );
+  });
+}
+
+// The available OpenSpec schemas, each enriched into a SchemaInfo the Settings
+// view can paint directly. Runs `openspec schemas --json` with `cwd` set to the
+// repo root (the app's own checkout) so the app's PROJECT schemas resolve, not
+// just the CLI's package one — OpenSpec only sees a repo's project schemas when
+// the CLI runs inside it. A second `openspec schema which --all --json` supplies
+// each schema's resolved folder path. `home` locates the CLI's user store
+// (userSchemasDir): a schema whose folder is present there is treated as
+// installed (Global + Uninstall). A failed/empty schemas call yields [].
+export function listSchemas(cwd?: string, home?: string): Promise<SchemaInfo[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "openspec",
+      ["schemas", "--json"],
+      { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err && !stdout) return resolve([]);
+        const raws = parseSchemas(String(stdout));
+        execFile(
+          "openspec",
+          ["schema", "which", "--all", "--json"],
+          { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+          (err2, stdout2) => {
+            const paths = err2 && !stdout2 ? {} : parseSchemaPaths(String(stdout2));
+            const store = home ? userSchemasDir(home) : "";
+            const installed = new Set<string>();
+            if (store) {
+              try {
+                for (const d of fs.readdirSync(store, { withFileTypes: true })) {
+                  if (d.isDirectory()) installed.add(d.name);
+                }
+              } catch {
+                /* no user store yet — nothing installed */
+              }
+            }
+            resolve(raws.map((r) => deriveSchemaInfo(r, paths, installed, store)));
+          }
+        );
+      }
+    );
+  });
+}
+
+// Combine one raw schema (from `openspec schemas --json`) with the resolved-path
+// map and the set of names present in the CLI's user store into the SchemaInfo the
+// UI paints. Pure so the whole Global/Local + Install/Uninstall decision is
+// unit-tested without touching disk or the CLI:
+//   - a package schema is Global with no action (it ships in the CLI);
+//   - a schema whose folder is in the user store is Global with Uninstall;
+//   - any other (an app-only project schema) is Local with Install.
+// The path shown is the user-store copy when installed, else the CLI's resolved
+// path — so the small path text always matches the pill.
+export function deriveSchemaInfo(
+  raw: RawSchema,
+  paths: Record<string, string>,
+  installedNames: Set<string>,
+  userStoreDir: string
+): SchemaInfo {
+  const installed = installedNames.has(raw.name);
+  const isPackage = raw.source === "package";
+  const scope = isPackage || installed ? "global" : "local";
+  const action = isPackage ? "none" : installed ? "uninstall" : "install";
+  const resolvedPath = installed && userStoreDir ? path.join(userStoreDir, raw.name) : paths[raw.name];
+  return {
+    name: raw.name,
+    description: raw.description,
+    artifacts: raw.artifacts,
+    scope,
+    action,
+    ...(resolvedPath ? { path: resolvedPath } : {}),
+  };
+}
+
+// A safe schema name is a single path component — no separators, no traversal,
+// not "." or "..". Enforced main-side before any filesystem operation so a
+// renderer-supplied name (untrusted, ADR-0002) can never escape the user store.
+export function isSafeSchemaName(name: string): boolean {
+  return (
+    typeof name === "string" &&
+    name.length > 0 &&
+    !name.includes("/") &&
+    !name.includes("\\") &&
+    !name.includes("\0") &&
+    name !== "." &&
+    name !== ".." &&
+    path.basename(name) === name
+  );
+}
+
+// Resolve where a schema install copies FROM and TO, or the reason it cannot.
+// Pure so the whole authorization is unit-tested: the name must be a safe single
+// component; the schema must be a `project` (app-owned) schema — never a package
+// or already-global one, so a hidden renderer button is not relied on as the
+// guard; and its folder must have resolved. Destination is `<userStore>/<name>`.
+export function planSchemaInstall(
+  name: string,
+  source: string,
+  from: string | undefined,
+  userStoreDir: string
+): { from: string; to: string } | { error: string } {
+  if (!isSafeSchemaName(name)) return { error: "invalid schema name" };
+  if (!from) return { error: "unknown schema" };
+  if (source !== "project") return { error: "only local (app) schemas can be installed" };
+  return { from, to: path.join(userStoreDir, name) };
+}
+
+// Copy a resolved app schema folder into the CLI's user store. Split from the CLI
+// resolution so the real copy — with its authorization and already-installed guard
+// — is unit-tested against temp dirs without shelling out. Dereferences symlinks so
+// the installed schema is self-contained.
+export function copySchemaIntoStore(
+  name: string,
+  source: string,
+  from: string | undefined,
+  home: string
+): SchemaActionResult {
+  const plan = planSchemaInstall(name, source, from, userSchemasDir(home));
+  if ("error" in plan) return { ok: false, error: plan.error };
+  try {
+    if (fs.existsSync(plan.to)) return { ok: false, error: "already installed" };
+    fs.mkdirSync(path.dirname(plan.to), { recursive: true });
+    fs.cpSync(plan.from, plan.to, { recursive: true, dereference: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) };
+  }
+}
+
+// Install a local (app) schema into the CLI's user store so it is usable for work
+// in every repo. Resolves the schema's source + folder via `openspec schema which
+// <name>` (from the app-bundle cwd, so project schemas resolve) then copies it.
+// Only a `project` schema is installable (enforced in planSchemaInstall).
+export function installSchema(name: string, cwd: string | undefined, home: string): Promise<SchemaActionResult> {
+  return new Promise((resolve) => {
+    if (!isSafeSchemaName(name)) return resolve({ ok: false, error: "invalid schema name" });
+    execFile(
+      "openspec",
+      ["schema", "which", name, "--json"],
+      { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err && !stdout) return resolve({ ok: false, error: "could not resolve schema" });
+        let source = "";
+        let from: string | undefined;
+        try {
+          const d = JSON.parse(String(stdout)) as { source?: unknown; path?: unknown };
+          if (typeof d.source === "string") source = d.source;
+          if (typeof d.path === "string") from = d.path;
+        } catch {
+          /* fall through: from stays undefined -> unknown schema */
+        }
+        resolve(copySchemaIntoStore(name, source, from, home));
+      }
+    );
+  });
+}
+
+// Uninstall a schema previously installed into the CLI's user store: delete
+// `<userStore>/<name>`. The name must be a safe single component AND the resolved
+// target must be an immediate child of the canonical user store, so a traversal
+// name can never delete anything outside it. Refuses when nothing is installed.
+export function uninstallSchema(name: string, home: string): Promise<SchemaActionResult> {
+  return new Promise((resolve) => {
+    if (!isSafeSchemaName(name)) return resolve({ ok: false, error: "invalid schema name" });
+    const store = userSchemasDir(home);
+    const target = path.join(store, name);
+    if (path.dirname(path.resolve(target)) !== path.resolve(store)) {
+      return resolve({ ok: false, error: "invalid schema name" });
+    }
+    try {
+      if (!fs.existsSync(target)) return resolve({ ok: false, error: "not installed" });
+      fs.rmSync(target, { recursive: true, force: true });
+      resolve({ ok: true });
+    } catch (e) {
+      resolve({ ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+    }
+  });
+}
+
+// Reveal a change's schema definition (its schema.yaml) in the OS file browser.
+// Both inputs are untrusted (ADR-0002): `repoPath` is matched against a currently
+// discovered repository (mirroring openWorktree/openRepoFile) and the CLI is run
+// from that MATCHED main-process path, never the raw renderer string; `name` must
+// be a safe single component. The folder is resolved via `openspec schema which
+// <name>` and `<folder>/schema.yaml` revealed via the injected opener
+// (shell.showItemInFolder). Unknown repo/schema or a missing schema.yaml is
+// reported rather than throwing; the shell is never touched on a rejected input.
+export function openSchemaFile(
+  args: Args,
+  name: string,
+  repoPath: string | undefined,
+  opener: PathOpener
+): Promise<OpenPathResult> {
+  return new Promise((resolve) => {
+    if (!isSafeSchemaName(name)) return resolve({ ok: false, error: "invalid schema name" });
+    const repos = discoverRepos(args);
+    const match = repos.find((r) => path.resolve(r) === path.resolve(repoPath || ""));
+    if (!match) return resolve({ ok: false, error: "unknown repo or worktree" });
+    execFile(
+      "openspec",
+      ["schema", "which", name, "--json"],
+      { cwd: path.resolve(match), timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      async (err, stdout) => {
+        if (err && !stdout) return resolve({ ok: false, error: "could not resolve schema" });
+        let folder: string | undefined;
+        try {
+          const d = JSON.parse(String(stdout)) as { path?: unknown };
+          if (typeof d.path === "string") folder = d.path;
+        } catch {
+          /* fall through to unknown */
+        }
+        if (!folder) return resolve({ ok: false, error: "unknown schema" });
+        const file = path.join(folder, "schema.yaml");
+        try {
+          if (!fs.statSync(file).isFile()) return resolve({ ok: false, error: "schema.yaml not found" });
+        } catch {
+          return resolve({ ok: false, error: "schema.yaml not found" });
+        }
+        const error = await opener(file);
+        resolve(error ? { ok: false, error } : { ok: true });
       }
     );
   });
@@ -644,8 +874,14 @@ export async function shapeChange(
   // it marks grill done while grilling is still ongoing). The last applicable
   // planning phase has no successor, so it falls back to isPlanningComplete. See
   // ADR-0004.
-  const applicableIds = PHASES.filter((id) => id in artifactPaths);
-  const phases: Phase[] = PHASES.map((id) => {
+  // The change's planning phases come from its own schema, read as the ordered
+  // keys of the status artifactPaths (the CLI returns them in declared artifact
+  // order). Falls back to the atdd-driven five only when status yielded no keys,
+  // so the chain is never blank. See ADR-0006.
+  const derivedIds = Object.keys(artifactPaths);
+  const phaseIds: PhaseId[] = derivedIds.length ? derivedIds : ATDD_FALLBACK_PHASES;
+  const applicableIds = phaseIds.filter((id) => id in artifactPaths);
+  const phases: Phase[] = phaseIds.map((id) => {
     const ap = artifactPaths[id] || {};
     const existing = (ap.existingOutputPaths || []).filter(Boolean) as string[];
     const applicable = id in artifactPaths;
@@ -1072,6 +1308,64 @@ export function schemaResolves(jsonOutput: string, name: string): boolean {
   }
 }
 
+// Parse `openspec schemas --json` into the board's raw schema list: each entry's
+// name, description, ordered artifact steps, and source ("project" | "package" |
+// "user", "" when absent). Malformed output (not JSON, not an array) yields []
+// rather than throwing, and entries missing a string name or an artifacts array
+// are skipped — the same defensive posture as schemaResolves / parseTargets.
+// Description defaults to "" when absent. deriveSchemaInfo turns each RawSchema
+// into the SchemaInfo the UI paints.
+export interface RawSchema {
+  name: string;
+  description: string;
+  artifacts: string[];
+  source: string;
+}
+
+export function parseSchemas(jsonOutput: string): RawSchema[] {
+  let list: unknown;
+  try {
+    list = JSON.parse(jsonOutput);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list)) return [];
+  const out: RawSchema[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as { name?: unknown; description?: unknown; artifacts?: unknown; source?: unknown };
+    if (typeof e.name !== "string") continue;
+    if (!Array.isArray(e.artifacts) || !e.artifacts.every((a) => typeof a === "string")) continue;
+    out.push({
+      name: e.name,
+      description: typeof e.description === "string" ? e.description : "",
+      artifacts: e.artifacts as string[],
+      source: typeof e.source === "string" ? e.source : "",
+    });
+  }
+  return out;
+}
+
+// Parse `openspec schema which --all --json` into a name → folder-path map. The
+// experimental "Note:" banner goes to stderr, so stdout is clean JSON. Entries
+// missing a name or path are skipped; non-JSON yields an empty map.
+export function parseSchemaPaths(jsonOutput: string): Record<string, string> {
+  let list: unknown;
+  try {
+    list = JSON.parse(jsonOutput);
+  } catch {
+    return {};
+  }
+  if (!Array.isArray(list)) return {};
+  const out: Record<string, string> = {};
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as { name?: unknown; path?: unknown };
+    if (typeof e.name === "string" && typeof e.path === "string") out[e.name] = e.path;
+  }
+  return out;
+}
+
 // `kirocrew doctor` prints "strict identity: ✅ routed" when healthy and a
 // negative such as "strict identity: not routed" otherwise, amongst other rows
 // (e.g. "kirocrew-core route: ✅ routed"). Isolate the `strict identity:` row so
@@ -1139,7 +1433,18 @@ export function resolveBundleRoot(
   return null;
 }
 
-// Pure install planner. Returns the ordered, deduplicated step list for the
+// The directory schema CLI commands (listing / installing Local schemas) run
+// from. In a packaged app the app schemas ship as an extraResource under
+// process.resourcesPath (which then contains `openspec/schemas`), so that is the
+// cwd; in development it is the resolved source-checkout bundle root. Pure so both
+// branches are observable in a unit test.
+export function resolveSchemasRoot(
+  isPackaged: boolean,
+  resourcesPath: string,
+  bundleRoot: string | null
+): string | null {
+  return isPackaged ? resourcesPath || null : bundleRoot;
+}
 // selected targets: each target's file copies, plus the shared OpenSpec global
 // slice, with Kiro Crew adding the host-wiring + restart steps on top of Kiro.
 // Steps are keyed by id and deduplicated so a multi-select install is idempotent.
@@ -1239,7 +1544,7 @@ export function planDoctorChecks(targets: Target[], ctx: { home: string }): Doct
 }
 
 export default {
-  PHASES,
+  ATDD_FALLBACK_PHASES,
   PRUNE,
   DEFAULT_DEPTH,
   defaultArgs,
@@ -1249,6 +1554,14 @@ export default {
   listChanges,
   runStatus,
   runArchive,
+  listSchemas,
+  deriveSchemaInfo,
+  planSchemaInstall,
+  isSafeSchemaName,
+  copySchemaIntoStore,
+  installSchema,
+  uninstallSchema,
+  openSchemaFile,
   taskProgress,
   changeType,
   prForBranch,
@@ -1267,6 +1580,7 @@ export default {
   resolveRoot,
   parseTargets,
   resolveBundleRoot,
+  resolveSchemasRoot,
   planInstall,
   planDoctorChecks,
   OPENSPEC_WORKFLOWS,
@@ -1278,6 +1592,7 @@ export default {
   missingEntries,
   missingWorkflows,
   schemaResolves,
+  parseSchemas,
   strictIdentityRouted,
   sessionControlEnabled,
   collect,

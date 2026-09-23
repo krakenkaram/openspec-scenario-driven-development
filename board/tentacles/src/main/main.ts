@@ -107,11 +107,16 @@ app.whenReady().then(() => {
     settings,
     chooseDirectory,
     openPath: (target: string) => shell.openPath(target),
+    revealItem: (target: string) => {
+      shell.showItemInFolder(target);
+      return Promise.resolve("");
+    },
     Tray,
     Menu,
     nativeImage,
     setup: {
       repoRoot: core.resolveBundleRoot(),
+      schemasRoot: core.resolveSchemasRoot(app.isPackaged, process.resourcesPath, core.resolveBundleRoot()),
       home: os.homedir(),
       exec: makeInstallExecutor(),
       probe: makeDoctorProbe(),
