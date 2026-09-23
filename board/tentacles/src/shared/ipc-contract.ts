@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's thirteen
+// Type-only IPC contract: the single source of truth for the board's sixteen
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -146,14 +146,33 @@ export type OpenPathResult = { ok: true } | { ok: false; error: string };
 // Crew is a superset of Kiro (see CONTEXT.md glossary).
 export type Target = "claude" | "kiro" | "kiro-crew";
 
-// One available OpenSpec schema, as reported by `openspec schemas --json`: its
-// name, description, and its planning artifacts in declared order. Surfaced
-// read-only in Settings so the user can see which schemas a change can use.
+// A schema's scope: "global" means the CLI resolves it in every repo — it either
+// ships in the CLI package or has been installed into the CLI's user store.
+// "local" means it ships in the app only and has not been installed into the CLI.
+export type SchemaScope = "global" | "local";
+
+// The action a schema row offers: "install" for a local schema (copy it into the
+// CLI's user store), "uninstall" for one the user installed there, "none" for a
+// package schema that ships in the CLI and cannot be removed.
+export type SchemaAction = "none" | "install" | "uninstall";
+
+// One available OpenSpec schema, as reported by `openspec schemas --json` and
+// enriched by the board. name/description/artifacts are its identity and its
+// planning steps in declared order. `scope` drives the Global/Local pill,
+// `action` the Install/Uninstall button, and `path` (the CLI-store copy when
+// installed, else where the CLI resolves it) is shown as small text under the name.
 export interface SchemaInfo {
   name: string;
   description: string;
   artifacts: string[];
+  scope: SchemaScope;
+  action: SchemaAction;
+  path?: string;
 }
+
+// The result of installing a schema into, or uninstalling it from, the CLI's user
+// store: ok, or a one-line error the Settings view surfaces.
+export type SchemaActionResult = { ok: true } | { ok: false; error: string };
 
 // One row of an Install run or a Doctor run: a labelled step/check with a
 // pass/fail and an optional one-line reason. Install and Doctor share this shape
@@ -191,6 +210,9 @@ export interface ChannelMap {
   install: "board:install";
   doctor: "board:doctor";
   listSchemas: "board:listSchemas";
+  installSchema: "board:installSchema";
+  uninstallSchema: "board:uninstallSchema";
+  openSchemaFile: "board:openSchemaFile";
 }
 
 export type Channel = ChannelMap[keyof ChannelMap];
@@ -227,4 +249,13 @@ export interface ElectronAPI {
   // The available OpenSpec schemas (name, description, ordered steps), for the
   // read-only Schemas reference in Settings.
   listSchemas(): Promise<SchemaInfo[]>;
+  // Install a local schema into the CLI's user store (making it usable for work in
+  // any repo), or uninstall one previously installed there. Addressed by schema
+  // NAME; the main process resolves the folder and performs the copy/delete.
+  installSchema(name: string): Promise<SchemaActionResult>;
+  uninstallSchema(name: string): Promise<SchemaActionResult>;
+  // Reveal a change's schema definition (its schema.yaml) in the OS file browser,
+  // addressed by schema NAME plus the change's repo so the main process resolves
+  // the folder itself and reveals the file (see core.openSchemaFile).
+  openSchemaFile(name: string, repoPath: string): Promise<OpenPathResult>;
 }

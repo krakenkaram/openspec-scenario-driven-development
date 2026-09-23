@@ -44,6 +44,7 @@ import type {
   ReadFileResult,
   ResultRow,
   SchemaInfo,
+  SchemaActionResult,
   SetSettingsArgs,
   SetSettingsResult,
   StatusResult,
@@ -67,6 +68,9 @@ export const IPC: ChannelMap = {
   install: "board:install",
   doctor: "board:doctor",
   listSchemas: "board:listSchemas",
+  installSchema: "board:installSchema",
+  uninstallSchema: "board:uninstallSchema",
+  openSchemaFile: "board:openSchemaFile",
 };
 
 // The subset of core the handlers depend on.
@@ -78,7 +82,10 @@ export interface BoardCore {
   archiveChange(args: Args, repoPath: string, change: string): Promise<ArchiveResult>;
   openWorktree(args: Args, target: string, opener: OpenPath): Promise<OpenPathResult>;
   openRepoFile(args: Args, repoPath: string, filePath: string, opener: OpenPath): Promise<OpenPathResult>;
-  listSchemas(): Promise<SchemaInfo[]>;
+  listSchemas(cwd?: string, home?: string): Promise<SchemaInfo[]>;
+  installSchema(name: string, cwd: string | undefined, home: string): Promise<SchemaActionResult>;
+  uninstallSchema(name: string, home: string): Promise<SchemaActionResult>;
+  openSchemaFile(name: string, repoPath: string | undefined, opener: OpenPath): Promise<OpenPathResult>;
 }
 
 export interface WindowOpts {
@@ -165,7 +172,8 @@ export function makeHandlers(
   settings?: SettingsDeps,
   chooseDirectory?: ChooseDirectory,
   openPath?: OpenPath,
-  setup?: SetupDeps
+  setup?: SetupDeps,
+  reveal?: OpenPath
 ) {
   return {
     getStatus: async () => {
@@ -247,7 +255,19 @@ export function makeHandlers(
       if (!openPath) return { ok: false, error: "open unavailable" };
       return core.openRepoFile(getArgs(), repoPath, filePath, openPath);
     },
-    listSchemas: (): Promise<SchemaInfo[]> => core.listSchemas(),
+    listSchemas: (): Promise<SchemaInfo[]> => core.listSchemas(setup?.repoRoot ?? undefined, setup?.home),
+    installSchema: async (_event: IpcMainInvokeEvent, name: string): Promise<SchemaActionResult> => {
+      if (!setup) return { ok: false, error: "setup unavailable" };
+      return core.installSchema(name, setup.repoRoot ?? undefined, setup.home);
+    },
+    uninstallSchema: async (_event: IpcMainInvokeEvent, name: string): Promise<SchemaActionResult> => {
+      if (!setup) return { ok: false, error: "setup unavailable" };
+      return core.uninstallSchema(name, setup.home);
+    },
+    openSchemaFile: async (_event: IpcMainInvokeEvent, name: string, repoPath: string): Promise<OpenPathResult> => {
+      if (!reveal) return { ok: false, error: "reveal unavailable" };
+      return core.openSchemaFile(name, repoPath, reveal);
+    },
   };
 }
 
@@ -264,9 +284,10 @@ export function registerIpc(
   settings?: SettingsDeps,
   chooseDirectory?: ChooseDirectory,
   openPath?: OpenPath,
-  setup?: SetupDeps
+  setup?: SetupDeps,
+  reveal?: OpenPath
 ) {
-  const handlers = makeHandlers(core, getArgs, observe, settings, chooseDirectory, openPath, setup);
+  const handlers = makeHandlers(core, getArgs, observe, settings, chooseDirectory, openPath, setup, reveal);
   ipcMain.handle(IPC.getStatus, handlers.getStatus);
   ipcMain.handle(IPC.readFile, handlers.readFile);
   ipcMain.handle(IPC.getDiff, handlers.getDiff);
@@ -280,6 +301,9 @@ export function registerIpc(
   ipcMain.handle(IPC.install, handlers.install);
   ipcMain.handle(IPC.doctor, handlers.doctor);
   ipcMain.handle(IPC.listSchemas, handlers.listSchemas);
+  ipcMain.handle(IPC.installSchema, handlers.installSchema);
+  ipcMain.handle(IPC.uninstallSchema, handlers.uninstallSchema);
+  ipcMain.handle(IPC.openSchemaFile, handlers.openSchemaFile);
   return handlers;
 }
 
@@ -393,6 +417,7 @@ export interface BootstrapDeps {
   settings?: SettingsDeps;
   chooseDirectory?: ChooseDirectory;
   openPath?: OpenPath;
+  revealItem?: OpenPath;
   setup?: SetupDeps;
   // macOS tray collaborators, injected so the wiring stays unit-testable with
   // fakes. Supplied by main.ts on darwin; omitted on other platforms (no tray).
@@ -418,12 +443,13 @@ export async function bootstrap({
   settings,
   chooseDirectory,
   openPath,
+  revealItem,
   setup,
   Tray,
   Menu,
   nativeImage,
 }: BootstrapDeps) {
-  registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup);
+  registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup, revealItem);
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
   const isMac = platform === "darwin";
   let started = false;

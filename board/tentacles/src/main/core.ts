@@ -30,6 +30,7 @@ import type {
   ReadFileResult,
   OpenPathResult,
   SchemaInfo,
+  SchemaActionResult,
   StatusResult,
   Target,
 } from "../shared/ipc-contract";
@@ -157,20 +158,176 @@ export function runStatus(repo: string, change: string): Promise<RawStatus | nul
   });
 }
 
-// The available OpenSpec schemas as reported by `openspec schemas --json`,
-// parsed into SchemaInfo[]. Runs from the board process cwd (the checkout the
-// app was launched from), so project + package/user schemas are all listed. A
-// failed/empty CLI call yields [] via parseSchemas — the Settings view then
-// simply shows no schemas rather than erroring.
-export function listSchemas(): Promise<SchemaInfo[]> {
+// The available OpenSpec schemas, each enriched into a SchemaInfo the Settings
+// view can paint directly. Runs `openspec schemas --json` with `cwd` set to the
+// repo root (the app's own checkout) so the app's PROJECT schemas resolve, not
+// just the CLI's package one — OpenSpec only sees a repo's project schemas when
+// the CLI runs inside it. A second `openspec schema which --all --json` supplies
+// each schema's resolved folder path. `home` locates the CLI's user store
+// (userSchemasDir): a schema whose folder is present there is treated as
+// installed (Global + Uninstall). A failed/empty schemas call yields [].
+export function listSchemas(cwd?: string, home?: string): Promise<SchemaInfo[]> {
   return new Promise((resolve) => {
     execFile(
       "openspec",
       ["schemas", "--json"],
-      { timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout) => {
         if (err && !stdout) return resolve([]);
-        resolve(parseSchemas(String(stdout)));
+        const raws = parseSchemas(String(stdout));
+        execFile(
+          "openspec",
+          ["schema", "which", "--all", "--json"],
+          { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+          (err2, stdout2) => {
+            const paths = err2 && !stdout2 ? {} : parseSchemaPaths(String(stdout2));
+            const store = home ? userSchemasDir(home) : "";
+            const installed = new Set<string>();
+            if (store) {
+              try {
+                for (const d of fs.readdirSync(store, { withFileTypes: true })) {
+                  if (d.isDirectory()) installed.add(d.name);
+                }
+              } catch {
+                /* no user store yet — nothing installed */
+              }
+            }
+            resolve(raws.map((r) => deriveSchemaInfo(r, paths, installed, store)));
+          }
+        );
+      }
+    );
+  });
+}
+
+// Combine one raw schema (from `openspec schemas --json`) with the resolved-path
+// map and the set of names present in the CLI's user store into the SchemaInfo the
+// UI paints. Pure so the whole Global/Local + Install/Uninstall decision is
+// unit-tested without touching disk or the CLI:
+//   - a package schema is Global with no action (it ships in the CLI);
+//   - a schema whose folder is in the user store is Global with Uninstall;
+//   - any other (an app-only project schema) is Local with Install.
+// The path shown is the user-store copy when installed, else the CLI's resolved
+// path — so the small path text always matches the pill.
+export function deriveSchemaInfo(
+  raw: RawSchema,
+  paths: Record<string, string>,
+  installedNames: Set<string>,
+  userStoreDir: string
+): SchemaInfo {
+  const installed = installedNames.has(raw.name);
+  const isPackage = raw.source === "package";
+  const scope = isPackage || installed ? "global" : "local";
+  const action = isPackage ? "none" : installed ? "uninstall" : "install";
+  const resolvedPath = installed && userStoreDir ? path.join(userStoreDir, raw.name) : paths[raw.name];
+  return {
+    name: raw.name,
+    description: raw.description,
+    artifacts: raw.artifacts,
+    scope,
+    action,
+    ...(resolvedPath ? { path: resolvedPath } : {}),
+  };
+}
+
+// Resolve where a schema install copies FROM and TO, or the reason it cannot.
+// `paths` is the name → folder map from `openspec schema which`; the source is the
+// app's local schema folder and the destination is `<userStore>/<name>`. Pure so
+// the resolution (including the unknown-schema error) is unit-tested; installSchema
+// then performs the copy.
+export function planSchemaInstall(
+  name: string,
+  paths: Record<string, string>,
+  userStoreDir: string
+): { from: string; to: string } | { error: string } {
+  if (!name) return { error: "no schema" };
+  const from = paths[name];
+  if (!from) return { error: "unknown schema" };
+  return { from, to: path.join(userStoreDir, name) };
+}
+
+// Install a local (app) schema into the CLI's user store so it is usable for work
+// in every repo. Resolves the schema's folder via `openspec schema which` (from
+// the repo cwd, so project schemas resolve) and copies it to `<userStore>/<name>`.
+// Refuses if the destination already exists (already installed). The copy
+// dereferences symlinks so the installed schema is self-contained.
+export function installSchema(name: string, cwd: string | undefined, home: string): Promise<SchemaActionResult> {
+  return new Promise((resolve) => {
+    if (!name) return resolve({ ok: false, error: "no schema" });
+    execFile(
+      "openspec",
+      ["schema", "which", "--all", "--json"],
+      { cwd, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err && !stdout) return resolve({ ok: false, error: "could not resolve schema" });
+        const plan = planSchemaInstall(name, parseSchemaPaths(String(stdout)), userSchemasDir(home));
+        if ("error" in plan) return resolve({ ok: false, error: plan.error });
+        try {
+          if (fs.existsSync(plan.to)) return resolve({ ok: false, error: "already installed" });
+          fs.mkdirSync(path.dirname(plan.to), { recursive: true });
+          fs.cpSync(plan.from, plan.to, { recursive: true, dereference: true });
+          resolve({ ok: true });
+        } catch (e) {
+          resolve({ ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+        }
+      }
+    );
+  });
+}
+
+// Uninstall a schema previously installed into the CLI's user store: delete
+// `<userStore>/<name>`. The target is always under the user store, so this never
+// touches a package or project (app) copy. Refuses when nothing is installed there.
+export function uninstallSchema(name: string, home: string): Promise<SchemaActionResult> {
+  return new Promise((resolve) => {
+    if (!name) return resolve({ ok: false, error: "no schema" });
+    const target = path.join(userSchemasDir(home), name);
+    try {
+      if (!fs.existsSync(target)) return resolve({ ok: false, error: "not installed" });
+      fs.rmSync(target, { recursive: true, force: true });
+      resolve({ ok: true });
+    } catch (e) {
+      resolve({ ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+    }
+  });
+}
+
+// Reveal a change's schema definition (its schema.yaml) in the OS file browser.
+// The schema NAME and the change's repo come from the board, never a free path:
+// the folder is resolved via `openspec schema which <name>` from the repo (so a
+// project schema resolves to the repo copy the change actually uses), and
+// `<folder>/schema.yaml` is revealed via the injected opener (shell.showItemInFolder).
+// A schema that cannot be resolved, or a missing schema.yaml, is reported rather
+// than throwing.
+export function openSchemaFile(
+  name: string,
+  repoPath: string | undefined,
+  opener: PathOpener
+): Promise<OpenPathResult> {
+  return new Promise((resolve) => {
+    if (!name) return resolve({ ok: false, error: "no schema" });
+    execFile(
+      "openspec",
+      ["schema", "which", name, "--json"],
+      { cwd: repoPath, timeout: 15000, maxBuffer: 8 * 1024 * 1024 },
+      async (err, stdout) => {
+        if (err && !stdout) return resolve({ ok: false, error: "could not resolve schema" });
+        let folder: string | undefined;
+        try {
+          const d = JSON.parse(String(stdout)) as { path?: unknown };
+          if (typeof d.path === "string") folder = d.path;
+        } catch {
+          /* fall through to unknown */
+        }
+        if (!folder) return resolve({ ok: false, error: "unknown schema" });
+        const file = path.join(folder, "schema.yaml");
+        try {
+          if (!fs.statSync(file).isFile()) return resolve({ ok: false, error: "schema.yaml not found" });
+        } catch {
+          return resolve({ ok: false, error: "schema.yaml not found" });
+        }
+        const error = await opener(file);
+        resolve(error ? { ok: false, error } : { ok: true });
       }
     );
   });
@@ -1103,12 +1260,21 @@ export function schemaResolves(jsonOutput: string, name: string): boolean {
   }
 }
 
-// Parse `openspec schemas --json` into the board's SchemaInfo list: each entry's
-// name, description, and ordered artifact steps. Malformed output (not JSON, not
-// an array) yields [] rather than throwing, and entries missing a string name or
-// an artifacts array are skipped — the same defensive posture as schemaResolves
-// / parseTargets. Description defaults to "" when absent.
-export function parseSchemas(jsonOutput: string): SchemaInfo[] {
+// Parse `openspec schemas --json` into the board's raw schema list: each entry's
+// name, description, ordered artifact steps, and source ("project" | "package" |
+// "user", "" when absent). Malformed output (not JSON, not an array) yields []
+// rather than throwing, and entries missing a string name or an artifacts array
+// are skipped — the same defensive posture as schemaResolves / parseTargets.
+// Description defaults to "" when absent. deriveSchemaInfo turns each RawSchema
+// into the SchemaInfo the UI paints.
+export interface RawSchema {
+  name: string;
+  description: string;
+  artifacts: string[];
+  source: string;
+}
+
+export function parseSchemas(jsonOutput: string): RawSchema[] {
   let list: unknown;
   try {
     list = JSON.parse(jsonOutput);
@@ -1116,17 +1282,38 @@ export function parseSchemas(jsonOutput: string): SchemaInfo[] {
     return [];
   }
   if (!Array.isArray(list)) return [];
-  const out: SchemaInfo[] = [];
+  const out: RawSchema[] = [];
   for (const entry of list) {
     if (typeof entry !== "object" || entry === null) continue;
-    const e = entry as { name?: unknown; description?: unknown; artifacts?: unknown };
+    const e = entry as { name?: unknown; description?: unknown; artifacts?: unknown; source?: unknown };
     if (typeof e.name !== "string") continue;
     if (!Array.isArray(e.artifacts) || !e.artifacts.every((a) => typeof a === "string")) continue;
     out.push({
       name: e.name,
       description: typeof e.description === "string" ? e.description : "",
       artifacts: e.artifacts as string[],
+      source: typeof e.source === "string" ? e.source : "",
     });
+  }
+  return out;
+}
+
+// Parse `openspec schema which --all --json` into a name → folder-path map. The
+// experimental "Note:" banner goes to stderr, so stdout is clean JSON. Entries
+// missing a name or path are skipped; non-JSON yields an empty map.
+export function parseSchemaPaths(jsonOutput: string): Record<string, string> {
+  let list: unknown;
+  try {
+    list = JSON.parse(jsonOutput);
+  } catch {
+    return {};
+  }
+  if (!Array.isArray(list)) return {};
+  const out: Record<string, string> = {};
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as { name?: unknown; path?: unknown };
+    if (typeof e.name === "string" && typeof e.path === "string") out[e.name] = e.path;
   }
   return out;
 }
@@ -1309,6 +1496,11 @@ export default {
   runStatus,
   runArchive,
   listSchemas,
+  deriveSchemaInfo,
+  planSchemaInstall,
+  installSchema,
+  uninstallSchema,
+  openSchemaFile,
   taskProgress,
   changeType,
   prForBranch,

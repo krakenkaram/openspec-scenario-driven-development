@@ -107,6 +107,10 @@ app.whenReady().then(() => {
     settings,
     chooseDirectory,
     openPath: (target: string) => shell.openPath(target),
+    revealItem: (target: string) => {
+      shell.showItemInFolder(target);
+      return Promise.resolve("");
+    },
     Tray,
     Menu,
     nativeImage,
