@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's sixteen
+// Type-only IPC contract: the single source of truth for the board's eighteen
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -76,7 +76,52 @@ export interface ArchiveArgs {
   repoPath: string;
   change: string;
 }
+// Execute an archive that may tear down the worktree. The acceptances carry the
+// user's answer to the single confirmation's enumerated warnings.
+export interface ArchiveExecuteArgs {
+  repoPath: string;
+  change: string;
+  acceptUnmerged: boolean;
+  acceptDirty: boolean;
+}
 export type ArchiveResult = { ok: true } | { ok: false; error: string };
+
+// What archiving a change would do to its worktree, computed before the single
+// confirmation is shown. `applies` is true only for an eligible teardown (the last
+// live Change in a linked, non-primary worktree); otherwise `keptReason` says why
+// the worktree is left in place. `warnings` enumerates everything at stake for the
+// one informed acceptance (last-change, unmerged branch, uncommitted work).
+export interface TeardownPlan {
+  applies: boolean;
+  keptReason?: "primary" | "not-last";
+  isPrimary: boolean;
+  worktreePath: string;
+  branch: string | null;
+  branchMerged: boolean;
+  dirty: boolean;
+  warnings: string[];
+}
+
+// The acceptances the shown warnings imply, carried on execute. They only PERMIT a
+// forced step; they can never fabricate one the current git state does not warrant.
+export interface TeardownAcceptances {
+  acceptUnmerged: boolean;
+  acceptDirty: boolean;
+}
+
+// Per-step outcome of an archive-with-teardown. A `null` step was not attempted
+// (not applicable, primary/not-last, or a prior step failed). The archive runs
+// first and always stands once done — later failures are reported, never rolled
+// back — so the renderer can tell the user exactly what happened.
+export interface ArchiveExecuteResult {
+  archived: boolean;
+  archiveError?: string;
+  worktreeRemoved: boolean | null;
+  worktreeError?: string;
+  branchDeleted: boolean | null;
+  branchError?: string;
+  keptReason?: "primary" | "not-last";
+}
 export type ReadFileResult = { ok: true; contents: string } | { ok: false; error: string };
 
 // A branch diff, structured before it crosses IPC (ADR-0002): the renderer paints
@@ -202,6 +247,8 @@ export interface ChannelMap {
   getDiff: "board:getDiff";
   getFileDiff: "board:getFileDiff";
   archive: "board:archive";
+  archivePlan: "board:archivePlan";
+  archiveExecute: "board:archiveExecute";
   getSettings: "board:getSettings";
   setSettings: "board:setSettings";
   chooseDirectory: "board:chooseDirectory";
@@ -235,6 +282,10 @@ export interface ElectronAPI {
   getDiff(repoPath: string): Promise<DiffResult>;
   getFileDiff(repoPath: string, filePath: string): Promise<DiffResult>;
   archive(payload: ArchiveArgs): Promise<ArchiveResult>;
+  // Compute what archiving a change would do to its worktree (for the single
+  // confirmation), and execute an archive-with-teardown carrying the acceptances.
+  archivePlan(payload: ArchiveArgs): Promise<TeardownPlan>;
+  archiveExecute(payload: ArchiveExecuteArgs): Promise<ArchiveExecuteResult>;
   getSettings(): Promise<BoardSettings>;
   setSettings(payload: SetSettingsArgs): Promise<SetSettingsResult>;
   chooseDirectory(): Promise<ChooseDirectoryResult>;

@@ -166,25 +166,78 @@ export default function App() {
     async (c: Change) => {
       const k = keyOf(c);
       if (inFlight.current.has(k)) return; // guard against a duplicate submission
-      const confirmed = window.confirm(
-        `Archive "${c.change}"?\n\nThis runs \`openspec archive\` (moves it to changes/archive/). Reversible on disk.`
-      );
-      if (!confirmed) return;
       inFlight.current.add(k);
-      setArchiving((prev) => new Set(prev).add(k));
+      const release = () => inFlight.current.delete(k);
       const clearArchiving = () =>
         setArchiving((prev) => {
           const next = new Set(prev);
           next.delete(k);
           return next;
         });
+
       try {
-        const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
-        if (d.ok) {
+        const plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
+
+        let confirmed: boolean;
+        let execute: () => Promise<{ ok: boolean; error?: string }>;
+
+        if (plan.applies) {
+          confirmed = window.confirm(
+            [
+              `Archive "${c.change}" and tear down its worktree?`,
+              "",
+              ...plan.warnings,
+              "",
+              "This cannot be undone.",
+            ].join("\n")
+          );
+          execute = async () => {
+            const r = await window.electronAPI.archiveExecute({
+              repoPath: c.repoPath,
+              change: c.change,
+              acceptUnmerged: !plan.branchMerged,
+              acceptDirty: plan.dirty,
+            });
+            if (!r.archived) return { ok: false, error: r.archiveError || "unknown" };
+            if (r.worktreeRemoved === false) {
+              return { ok: true, error: `Archived, but the worktree could not be removed: ${r.worktreeError || "unknown"}` };
+            }
+            if (r.branchDeleted === false) {
+              return { ok: true, error: `Archived and worktree removed, but the branch was not deleted: ${r.branchError || "unknown"}` };
+            }
+            return { ok: true };
+          };
+        } else if (plan.keptReason === "primary") {
+          confirmed = window.confirm(
+            `Archive "${c.change}"?\n\nThis is the last change in this worktree, but the worktree will be kept because it is the primary checkout.`
+          );
+          execute = async () => {
+            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
+          };
+        } else {
+          confirmed = window.confirm(
+            `Archive "${c.change}"?\n\nThis runs \`openspec archive\` (moves it to changes/archive/). Reversible on disk.`
+          );
+          execute = async () => {
+            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
+          };
+        }
+
+        if (!confirmed) {
+          release();
+          return;
+        }
+        setArchiving((prev) => new Set(prev).add(k));
+
+        const res = await execute();
+        if (res.ok) {
+          if (res.error) window.alert(res.error); // archive succeeded; teardown was partial
           clearArchiving();
           setRemoving((prev) => new Set(prev).add(k));
           setTimeout(() => {
-            inFlight.current.delete(k);
+            release();
             setArchived((prev) => new Set(prev).add(k));
             setRemoving((prev) => {
               const next = new Set(prev);
@@ -194,13 +247,13 @@ export default function App() {
             void refresh();
           }, 320);
         } else {
-          window.alert("Archive failed: " + (d.error || "unknown"));
-          inFlight.current.delete(k);
+          window.alert("Archive failed: " + res.error);
+          release();
           clearArchiving();
         }
       } catch (e) {
         window.alert("Archive failed: " + e);
-        inFlight.current.delete(k);
+        release();
         clearArchiving();
       }
     },
