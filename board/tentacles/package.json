@@ -58,6 +58,8 @@
     }
   },
   "dependencies": {
+    "@mantine/core": "9.6.1",
+    "@mantine/hooks": "9.6.1",
     "highlight.js": "11.11.1",
     "react-markdown": "9.0.1",
     "remark-gfm": "4.0.0"
