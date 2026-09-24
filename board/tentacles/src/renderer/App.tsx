@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MantineProvider, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
+import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
 import { groupWorktrees } from "../shared/grouping";
 import { Modal, type ModalSection } from "./modal";
@@ -9,20 +11,36 @@ import { SettingsPanel } from "./settings";
 import notificationSoundUrl from "./assets/msn-message.mp3";
 
 const REFRESH_MS = 15000;
-type ThemeChoice = "light" | "dark" | null;
 
 const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
+
+// Mantine owns the colour scheme. While the board's screens are migrated to Mantine,
+// the resolved scheme is mirrored onto the documentElement's data-theme so the
+// not-yet-migrated styles.css keeps responding to the toggle; this bridge is removed
+// once styles.css is gone.
+function ThemeToggle() {
+  const { setColorScheme } = useMantineColorScheme();
+  const computed = useComputedColorScheme("dark", { getInitialValueInEffect: true });
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", computed);
+  }, [computed]);
+  return (
+    <button
+      className="theme-btn"
+      onClick={() => setColorScheme(computed === "dark" ? "light" : "dark")}
+      aria-label="Toggle colour scheme"
+      title="Toggle dark / light"
+    >
+      🌓
+    </button>
+  );
+}
 
 // specs/<capability>/spec.md → <capability>; used as the tab label when several
 // spec files are shown together. Falls back to the file name for other shapes.
 function capabilityOf(file: string): string {
   const m = file.match(/specs\/([^/]+)\/[^/]+$/);
   return m ? (m[1] as string) : (file.split("/").pop() ?? file);
-}
-
-function readSavedTheme(): ThemeChoice {
-  const saved = localStorage.getItem("osb-theme");
-  return saved === "light" || saved === "dark" ? saved : null;
 }
 
 function readExpanded(): Set<string> {
@@ -49,7 +67,6 @@ export default function App() {
   const [stale, setStale] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
-  const [theme, setTheme] = useState<ThemeChoice>(() => readSavedTheme());
   const [expanded, setExpanded] = useState<Set<string>>(() => readExpanded());
   const [selection, setSelection] = useState<Selection>(() => readSelection());
   const [archived, setArchived] = useState<Set<string>>(() => new Set());
@@ -87,20 +104,6 @@ export default function App() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
-
-  useLayoutEffect(() => {
-    if (theme) document.documentElement.setAttribute("data-theme", theme);
-    else document.documentElement.removeAttribute("data-theme");
-  }, [theme]);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const effective = prev || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      const next: ThemeChoice = effective === "dark" ? "light" : "dark";
-      localStorage.setItem("osb-theme", next);
-      return next;
-    });
-  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -380,16 +383,14 @@ export default function App() {
   }
 
   return (
-    <>
+    <MantineProvider theme={theme} defaultColorScheme="auto">
       <header>
         <h1>🗂️ OpenSpec Board</h1>
         <div className="meta">
           <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
             ⚙
           </button>
-          <button className="theme-btn" onClick={toggleTheme} title="Toggle dark / light">
-            🌓
-          </button>
+          <ThemeToggle />
           <span className={`dot ${stale ? "stale" : ""}`} />
           <span>{statusText}</span>
         </div>
@@ -415,6 +416,6 @@ export default function App() {
       </div>
       <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void refresh()} />
-    </>
+    </MantineProvider>
   );
 }
