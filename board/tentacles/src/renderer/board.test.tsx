@@ -27,10 +27,10 @@ describe("the renderer renders the board state", () => {
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([complete, incomplete, other], 2)) });
 
     render(<App />);
-    await screen.findByText("repo-a", { selector: ".sb-repo-name" });
+    await screen.findByText("repo-a", { selector: "[data-repo-name]" });
 
     // the sidebar lists both repositories in name order
-    const repoNames = [...document.querySelectorAll(".sb-repo-name")].map((e) => e.textContent);
+    const repoNames = [...document.querySelectorAll("[data-repo-name]")].map((e) => e.textContent);
     expect(repoNames).toEqual(["repo-a", "repo-b"]);
 
     // repo-a is the seeded selection: only its cards show, incomplete before complete

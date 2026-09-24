@@ -18,34 +18,36 @@ function twoRepos() {
   return [wtA, wtB, solo];
 }
 
+const repoRows = () => [...document.querySelectorAll("[data-repo]")];
+const leafRows = () => [...document.querySelectorAll("[data-worktree-leaf]")];
+const branchOrder = () => leafRows().map((el) => el.getAttribute("data-branch"));
+
 describe("sidebar lists repositories as expandable rows", () => {
   it("shows one row per repository with a worktree count badge", async () => {
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
     render(<App />);
     await screen.findByText("wings-core");
 
-    const rows = [...document.querySelectorAll(".sb-repo")];
-    expect(rows).toHaveLength(2);
-    const wc = screen.getByText("wings-core").closest(".sb-repo") as HTMLElement;
-    const lonely = screen.getByText("lonely").closest(".sb-repo") as HTMLElement;
-    expect(within(wc).getByText("2", { selector: ".sb-count" })).toBeTruthy();
-    expect(within(lonely).getByText("1", { selector: ".sb-count" })).toBeTruthy();
+    expect(repoRows()).toHaveLength(2);
+    expect(screen.getByTitle("2 worktree(s)")).toHaveTextContent("2");
+    expect(screen.getByTitle("1 worktree(s)")).toHaveTextContent("1");
   });
 
   it("expands and collapses a repository row to reveal and hide its worktrees", async () => {
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
     const user = userEvent.setup();
     render(<App />);
-    const wc = (await screen.findByText("wings-core")).closest(".sb-repo") as HTMLElement;
+    const wc = (await screen.findByText("wings-core")).closest("[data-repo]") as HTMLElement;
 
     // collapsed on cold start → no leaves
-    expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(0);
+    expect(within(wc).queryByText("feat-a")).toBeNull();
 
     await user.click(within(wc).getByRole("button", { name: /expand repository/i }));
-    expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(2);
+    expect(within(wc).getByText("feat-a")).toBeInTheDocument();
+    expect(within(wc).getByText("feat-b")).toBeInTheDocument();
 
     await user.click(within(wc).getByRole("button", { name: /collapse repository/i }));
-    expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(0);
+    expect(within(wc).queryByText("feat-a")).toBeNull();
   });
 });
 
@@ -64,8 +66,8 @@ describe("layout: top bar stays, sidebar is chrome-free, nothing selected shows 
     // sidebar carries no title / settings / status strip of its own
     const sidebar = document.querySelector(".sidebar") as HTMLElement;
     expect(sidebar.querySelector("h1")).toBeNull();
-    expect(sidebar.querySelector(".settings-btn")).toBeNull();
-    expect(sidebar.querySelector(".meta")).toBeNull();
+    expect(within(sidebar).queryByTitle("Settings")).toBeNull();
+    expect(within(sidebar).queryByText(/change\(s\) ·/)).toBeNull();
   });
 
   it("does not stack all repositories and shows a neutral prompt on cold start", async () => {
@@ -74,7 +76,7 @@ describe("layout: top bar stays, sidebar is chrome-free, nothing selected shows 
     await screen.findByText("wings-core");
 
     // no change cards are rendered in the main panel until a selection is made
-    expect(document.querySelectorAll(".change")).toHaveLength(0);
+    expect(document.querySelectorAll("[data-change-card]")).toHaveLength(0);
     expect(screen.getByText(/Select a repository/i)).toBeInTheDocument();
   });
 });
@@ -96,13 +98,13 @@ describe("repository selection scopes the main panel; chevron vs body", () => {
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
     const user = userEvent.setup();
     render(<App />);
-    const wc = (await screen.findByText("wings-core")).closest(".sb-repo") as HTMLElement;
+    const wc = (await screen.findByText("wings-core")).closest("[data-repo]") as HTMLElement;
 
-    expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(0); // collapsed
+    expect(within(wc).queryByText("feat-a")).toBeNull(); // collapsed
     await user.click(screen.getByText("wings-core"));
 
-    expect(wc.className).toContain("selected"); // selected
-    expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(2); // auto-expanded
+    expect(wc.getAttribute("aria-current")).toBe("true"); // selected
+    expect(within(wc).getByText("feat-a")).toBeInTheDocument(); // auto-expanded
     expect(screen.getByRole("heading", { level: 2, name: "wc-a" })).toBeInTheDocument(); // main scoped to it
   });
 
@@ -114,15 +116,15 @@ describe("repository selection scopes the main panel; chevron vs body", () => {
 
     // select lonely first
     await user.click(screen.getByText("lonely"));
-    expect(screen.getByText("solo")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "solo" })).toBeInTheDocument();
 
     // expand wings-core via its chevron — selection must stay on lonely
-    const wc = screen.getByText("wings-core").closest(".sb-repo") as HTMLElement;
+    const wc = screen.getByText("wings-core").closest("[data-repo]") as HTMLElement;
     await user.click(within(wc).getByRole("button", { name: /expand repository/i }));
 
-    expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(2); // expanded
-    expect(wc.className).not.toContain("selected"); // not selected
-    expect(screen.getByText("solo")).toBeInTheDocument(); // lonely still the selection
+    expect(within(wc).getByText("feat-a")).toBeInTheDocument(); // expanded
+    expect(wc.getAttribute("aria-current")).not.toBe("true"); // not selected
+    expect(screen.getByRole("heading", { level: 2, name: "solo" })).toBeInTheDocument(); // lonely still the selection
   });
 });
 
@@ -133,15 +135,15 @@ describe("worktree leaf composition", () => {
     expand("/Code/acme/.git");
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([primary, linked], 1)) });
     render(<App />);
-    await screen.findByText("acme", { selector: ".sb-repo-name" });
+    await screen.findByText("feat/x");
 
-    const primaryLeaf = screen.getByText("main").closest(".sb-leaf") as HTMLElement;
-    const linkedLeaf = screen.getByText("feat/x").closest(".sb-leaf") as HTMLElement;
+    const primaryLeaf = screen.getByText("main").closest("[data-worktree-leaf]") as HTMLElement;
+    const linkedLeaf = screen.getByText("feat/x").closest("[data-worktree-leaf]") as HTMLElement;
 
-    expect(within(primaryLeaf).getByText("acme", { selector: ".sb-leaf-sub" })).toBeTruthy();
-    expect(within(linkedLeaf).getByText("acme-feat-x", { selector: ".sb-leaf-sub" })).toBeTruthy();
+    expect(within(primaryLeaf).getByText("acme")).toBeInTheDocument();
+    expect(within(linkedLeaf).getByText("acme-feat-x")).toBeInTheDocument();
     // The "primary" pill is gone from every row.
-    expect(document.querySelector(".sb-pill")).toBeNull();
+    expect(screen.queryByText(/primary/i)).toBeNull();
   });
 
   it("still sorts the primary checkout first even though it is no longer labelled", async () => {
@@ -151,10 +153,9 @@ describe("worktree leaf composition", () => {
     // scrambled input order: linked first
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([linked, primary], 1)) });
     render(<App />);
-    await screen.findByText("acme", { selector: ".sb-repo-name" });
+    await screen.findByText("feat/x");
 
-    const titles = [...document.querySelectorAll(".sb-leaf-title")].map((e) => e.textContent);
-    expect(titles).toEqual(["main", "feat/x"]);
+    expect(branchOrder()).toEqual(["main", "feat/x"]);
   });
 });
 
@@ -165,37 +166,34 @@ describe("per-worktree status indicator (four states, least-done-wins)", () => {
     expand("/Code/repo-a/.git");
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(changes, 1)) });
   }
+  const statusOf = (el: HTMLElement) => el.querySelector("[data-status]")?.getAttribute("data-status");
 
   it("renders a green tick when all changes are complete", async () => {
     leafFor([makeChange({ change: "done1", repoPath: "/Code/repo-a", complete: true })]);
     render(<App />);
     const el = await waitForLeaf();
-    expect(el.querySelector(".sb-tick")).not.toBeNull();
-    expect(el.querySelector(".spinner")).toBeNull();
-    expect(el.querySelector(".sb-dot")).toBeNull();
+    expect(statusOf(el)).toBe("completed");
   });
 
   it("renders the in-progress spinner when a change is applying", async () => {
     leafFor([makeChange({ change: "app1", repoPath: "/Code/repo-a", applying: true, complete: false })]);
     render(<App />);
     const el = await waitForLeaf();
-    expect(el.querySelector(".spinner")).not.toBeNull();
+    expect(statusOf(el)).toBe("in-progress");
   });
 
   it("renders a red circle when a change's PR has requested changes (blocked)", async () => {
     leafFor([makeChange({ change: "blk1", repoPath: "/Code/repo-a", complete: false, pr: CHANGES_REQUESTED_PR })]);
     render(<App />);
     const el = await waitForLeaf();
-    expect(el.querySelector(".sb-dot.blocked")).not.toBeNull();
-    expect(el.querySelector(".spinner")).toBeNull();
-    expect(el.querySelector(".sb-tick")).toBeNull();
+    expect(statusOf(el)).toBe("blocked");
   });
 
   it("renders the grey idle dot when nothing is active, blocked, or complete", async () => {
     leafFor([makeChange({ change: "idle1", repoPath: "/Code/repo-a", complete: false })]);
     render(<App />);
-    const el = (await waitForLeaf());
-    expect(el.querySelector(".sb-dot.idle")).not.toBeNull();
+    const el = await waitForLeaf();
+    expect(statusOf(el)).toBe("idle");
   });
 
   it("precedence: blocked wins over in-progress", async () => {
@@ -205,8 +203,7 @@ describe("per-worktree status indicator (four states, least-done-wins)", () => {
     ]);
     render(<App />);
     const el = await waitForLeaf();
-    expect(el.querySelector(".sb-dot.blocked")).not.toBeNull();
-    expect(el.querySelector(".spinner")).toBeNull();
+    expect(statusOf(el)).toBe("blocked");
   });
 
   it("precedence: in-progress wins over completed (least-done-wins)", async () => {
@@ -216,13 +213,12 @@ describe("per-worktree status indicator (four states, least-done-wins)", () => {
     ]);
     render(<App />);
     const el = await waitForLeaf();
-    expect(el.querySelector(".spinner")).not.toBeNull();
-    expect(el.querySelector(".sb-tick")).toBeNull();
+    expect(statusOf(el)).toBe("in-progress");
   });
 });
 
 describe("completed worktree row is de-emphasised", () => {
-  it("dims a completed leaf row and leaves an idle row at full weight", async () => {
+  it("marks a completed leaf row and leaves an idle row unmarked", async () => {
     expand("/Code/r/.git");
     const done = makeChange({ change: "d", repoPath: "/Code/w-done", repositoryId: "/Code/r/.git", repositoryName: "r", branch: "wt-done", complete: true });
     const idle = makeChange({ change: "i", repoPath: "/Code/w-idle", repositoryId: "/Code/r/.git", repositoryName: "r", branch: "wt-idle", complete: false });
@@ -230,10 +226,10 @@ describe("completed worktree row is de-emphasised", () => {
     render(<App />);
     await screen.findByText("r");
 
-    const doneLeaf = screen.getByText("wt-done").closest(".sb-leaf") as HTMLElement;
-    const idleLeaf = screen.getByText("wt-idle").closest(".sb-leaf") as HTMLElement;
-    expect(doneLeaf.className).toContain("completed");
-    expect(idleLeaf.className).not.toContain("completed");
+    const doneLeaf = screen.getByText("wt-done").closest("[data-worktree-leaf]") as HTMLElement;
+    const idleLeaf = screen.getByText("wt-idle").closest("[data-worktree-leaf]") as HTMLElement;
+    expect(doneLeaf.getAttribute("data-completed")).toBe("true");
+    expect(idleLeaf.getAttribute("data-completed")).toBeNull();
   });
 });
 
@@ -252,8 +248,7 @@ describe("worktree leaves are ordered by attention tier", () => {
     render(<App />);
     await screen.findByText("r");
 
-    const titles = [...document.querySelectorAll(".sb-leaf-title")].map((e) => e.textContent);
-    expect(titles).toEqual(["wt-human", "wt-active", "wt-done", "wt-idle"]);
+    expect(branchOrder()).toEqual(["wt-human", "wt-active", "wt-done", "wt-idle"]);
   });
 });
 
@@ -267,7 +262,7 @@ describe("selection and expansion persist; cold start and stale target", () => {
     await screen.findByText("main-branch");
 
     // repo expanded (leaf visible) and worktree selected (leaf highlighted + diff panel shown)
-    expect(document.querySelector(".sb-leaf.selected")).not.toBeNull();
+    expect(document.querySelector('[data-worktree-leaf][aria-current="true"]')).not.toBeNull();
     expect(await screen.findByText(/Branch diff —/)).toBeInTheDocument();
   });
 
@@ -278,14 +273,14 @@ describe("selection and expansion persist; cold start and stale target", () => {
     render(<App />);
     await screen.findByText(/Select a repository/i);
 
-    expect(document.querySelector(".sb-leaf.selected")).toBeNull();
+    expect(document.querySelector('[data-worktree-leaf][aria-current="true"]')).toBeNull();
     expect(document.querySelector(".diff-panel")).toBeNull();
   });
 });
 
 function waitForLeaf(): Promise<HTMLElement> {
   return waitFor(() => {
-    const el = document.querySelector(".sb-leaf");
+    const el = document.querySelector("[data-worktree-leaf]");
     expect(el).not.toBeNull();
     return el as HTMLElement;
   });

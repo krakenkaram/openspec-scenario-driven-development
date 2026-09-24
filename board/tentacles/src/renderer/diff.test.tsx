@@ -123,7 +123,7 @@ describe("the inline diff refreshes live every 3s while the worktree is selected
     expect(api.getDiff).toHaveBeenCalledTimes(2); // re-requested on the 3s tick
 
     // deselect by selecting the repository row again → the panel unmounts
-    fireEvent.click(document.querySelector(".sb-repo-row") as HTMLElement);
+    fireEvent.click(document.querySelector("[data-repo-row]") as HTMLElement);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
     });

@@ -1,3 +1,4 @@
+import { Badge, Box, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
 import type { RepositoryGroup } from "../shared/ipc-contract";
 import { worktreeLeaves, worktreeStatus, worktreeDirName, type WorktreeLeaf } from "./worktrees";
 
@@ -9,19 +10,41 @@ export type Selection =
   | { kind: "worktree"; repoPath: string }
   | null;
 
+const statusDotColor: Record<string, string> = {
+  blocked: "red",
+  idle: "gray",
+};
+
 function StatusIndicator({ changes }: { changes: WorktreeLeaf["changes"] }) {
   const status = worktreeStatus(changes);
   if (status === "in-progress") {
-    return <span className="spinner sb-status" title="in progress" />;
+    return (
+      <Box component="span" title="in progress" aria-label="in progress" data-status="in-progress" style={{ display: "inline-flex" }}>
+        <Loader size={12} />
+      </Box>
+    );
   }
   if (status === "completed") {
     return (
-      <span className="sb-tick sb-status" title="completed" aria-label="completed">
+      <Text component="span" c="teal" title="completed" aria-label="completed" data-status="completed">
         ✓
-      </span>
+      </Text>
     );
   }
-  return <span className={`sb-dot ${status}`} title={status} />;
+  return (
+    <Box
+      component="span"
+      title={status}
+      aria-label={status}
+      data-status={status}
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        backgroundColor: `var(--mantine-color-${statusDotColor[status] ?? "gray"}-6)`,
+      }}
+    />
+  );
 }
 
 function SidebarLeaf({
@@ -35,20 +58,36 @@ function SidebarLeaf({
 }) {
   const completed = worktreeStatus(leaf.changes) === "completed";
   return (
-    <button
-      className={`sb-leaf ${selected ? "selected" : ""} ${completed ? "completed" : ""}`}
+    <UnstyledButton
+      data-worktree-leaf
+      data-branch={leaf.branch ?? "(detached)"}
+      data-completed={completed || undefined}
+      aria-current={selected || undefined}
       onClick={onSelect}
       title={leaf.repoPath}
+      p="xs"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        borderRadius: 6,
+        opacity: completed ? 0.6 : 1,
+        backgroundColor: selected ? "var(--mantine-color-grape-light)" : undefined,
+      }}
     >
       <StatusIndicator changes={leaf.changes} />
-      <span className="sb-leaf-main">
-        <span className="sb-leaf-title">{leaf.branch ?? "(detached)"}</span>
-        <span className="sb-leaf-sub">{worktreeDirName(leaf.repoPath)}</span>
-      </span>
-      <span className="sb-diff-glyph" aria-hidden="true">
+      <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+        <Text size="sm" truncate>
+          {leaf.branch ?? "(detached)"}
+        </Text>
+        <Text size="xs" c="dimmed" truncate>
+          {worktreeDirName(leaf.repoPath)}
+        </Text>
+      </Stack>
+      <Text c="dimmed" aria-hidden="true">
         ±
-      </span>
-    </button>
+      </Text>
+    </UnstyledButton>
   );
 }
 
@@ -69,31 +108,40 @@ function SidebarRepo({
 }) {
   const leaves = worktreeLeaves(group);
   const isSelectedRepo = selection?.kind === "repo" && selection.repositoryId === group.repositoryId;
-  const hasSelectedLeaf =
-    selection?.kind === "worktree" && leaves.some((l) => l.repoPath === selection.repoPath);
   return (
-    <div className={`sb-repo ${isSelectedRepo ? "selected" : ""} ${hasSelectedLeaf ? "active-ancestor" : ""}`}>
-      <div className="sb-repo-row" onClick={() => onSelectRepo(group.repositoryId)}>
-        <button
-          className="sb-chevron"
+    <Box data-repo aria-current={isSelectedRepo || undefined}>
+      <Group
+        gap={4}
+        wrap="nowrap"
+        data-repo-row
+        onClick={() => onSelectRepo(group.repositoryId)}
+        style={{
+          cursor: "pointer",
+          borderRadius: 6,
+          padding: "4px 6px",
+          backgroundColor: isSelectedRepo ? "var(--mantine-color-grape-light)" : undefined,
+        }}
+      >
+        <UnstyledButton
           aria-label={expanded ? "Collapse repository" : "Expand repository"}
           onClick={(e) => {
             e.stopPropagation();
             onToggle(group.repositoryId);
           }}
+          c="dimmed"
         >
           {expanded ? "▼" : "▶"}
-        </button>
-        <span className="sb-repo-icon" aria-hidden="true">
-          🗂️
-        </span>
-        <span className="sb-repo-name">{group.repositoryName}</span>
-        <span className="sb-count" title={`${leaves.length} worktree(s)`}>
+        </UnstyledButton>
+        <Text aria-hidden="true">🗂️</Text>
+        <Text data-repo-name fw={600} style={{ flex: 1, minWidth: 0 }} truncate>
+          {group.repositoryName}
+        </Text>
+        <Badge size="sm" variant="light" color="gray" title={`${leaves.length} worktree(s)`}>
           {leaves.length}
-        </span>
-      </div>
+        </Badge>
+      </Group>
       {expanded && (
-        <div className="sb-leaves">
+        <Stack gap={2} pl="md" pt={4}>
           {leaves.map((leaf) => (
             <SidebarLeaf
               key={leaf.repoPath}
@@ -102,9 +150,9 @@ function SidebarRepo({
               onSelect={() => onSelectWorktree(leaf.repoPath)}
             />
           ))}
-        </div>
+        </Stack>
       )}
-    </div>
+    </Box>
   );
 }
 
@@ -126,18 +174,20 @@ export function Sidebar({
   onSelectWorktree: (repoPath: string) => void;
 }) {
   return (
-    <aside className="sidebar" style={{ width, flex: "0 0 auto" }}>
-      {groups.map((g) => (
-        <SidebarRepo
-          key={g.repositoryId}
-          group={g}
-          expanded={expanded.has(g.repositoryId)}
-          selection={selection}
-          onToggle={onToggle}
-          onSelectRepo={onSelectRepo}
-          onSelectWorktree={onSelectWorktree}
-        />
-      ))}
-    </aside>
+    <Box component="aside" className="sidebar" style={{ width, flex: "0 0 auto", overflowY: "auto" }}>
+      <Stack gap={4} p="xs">
+        {groups.map((g) => (
+          <SidebarRepo
+            key={g.repositoryId}
+            group={g}
+            expanded={expanded.has(g.repositoryId)}
+            selection={selection}
+            onToggle={onToggle}
+            onSelectRepo={onSelectRepo}
+            onSelectWorktree={onSelectWorktree}
+          />
+        ))}
+      </Stack>
+    </Box>
   );
 }
