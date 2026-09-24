@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { makeChange, makeStatus, mockApi, phase, selectRepo } from "./test-fixtures";
@@ -22,6 +22,8 @@ function changeWithFile() {
   });
 }
 
+const dialog = () => screen.getByRole("dialog");
+
 describe("file modal", () => {
   it("opens a file and shows its contents as text", async () => {
     const api = mockApi({
@@ -35,7 +37,7 @@ describe("file modal", () => {
     await user.click(screen.getByText("grill"));
 
     expect(api.readFile).toHaveBeenCalledWith("/repo/openspec/changes/x/proposal.md");
-    await waitFor(() => expect(document.querySelector(".modal-body")?.textContent).toBe("hello contents"));
+    expect(await within(await screen.findByRole("dialog")).findByText("hello contents")).toBeInTheDocument();
   });
 
   it("renders untrusted HTML content as text, not DOM", async () => {
@@ -50,8 +52,9 @@ describe("file modal", () => {
     await screen.findByText("file-demo");
     await user.click(screen.getByText("grill"));
 
-    await waitFor(() => expect(document.querySelector(".modal-body")?.textContent).toBe(evil));
-    expect(document.querySelector(".modal-body script")).toBeNull();
+    const d = await screen.findByRole("dialog");
+    await waitFor(() => expect(d.textContent).toContain(evil));
+    expect(d.querySelector("script")).toBeNull();
   });
 
   it("renders markdown as formatted elements (heading, list, task list, table)", async () => {
@@ -78,14 +81,14 @@ describe("file modal", () => {
     await screen.findByText("file-demo");
     await user.click(screen.getByText("grill"));
 
-    await waitFor(() => expect(document.querySelector(".modal-body h1")).toBeInTheDocument());
-    expect(document.querySelector(".modal-body h1")?.textContent).toBe("Title");
-    expect(document.querySelector(".modal-body ul")).toBeTruthy();
-    expect(document.querySelector(".modal-body table")).toBeTruthy();
+    const d = await screen.findByRole("dialog");
+    expect(await within(d).findByRole("heading", { level: 1, name: "Title" })).toBeInTheDocument();
+    expect(d.querySelector("ul")).toBeTruthy();
+    expect(d.querySelector("table")).toBeTruthy();
     // remark-gfm task list → checkbox inputs, not literal "[ ]" text
-    expect(document.querySelector('.modal-body input[type="checkbox"]')).toBeTruthy();
+    expect(d.querySelector('input[type="checkbox"]')).toBeTruthy();
     // not raw markdown source
-    expect(document.querySelector(".modal-body")?.textContent).not.toContain("# Title");
+    expect(d.textContent).not.toContain("# Title");
   });
 
   it("renders links as external-only anchors so they cannot navigate the board window", async () => {
@@ -99,11 +102,7 @@ describe("file modal", () => {
     await screen.findByText("file-demo");
     await user.click(screen.getByText("grill"));
 
-    const link = await waitFor(() => {
-      const a = document.querySelector(".modal-body a") as HTMLAnchorElement | null;
-      expect(a).not.toBeNull();
-      return a as HTMLAnchorElement;
-    });
+    const link = await within(await screen.findByRole("dialog")).findByRole("link", { name: "the docs" });
     // target=_blank routes the click through the main window-open handler (external,
     // https-only, child-window denied) instead of navigating the privileged window.
     expect(link.getAttribute("target")).toBe("_blank");
@@ -121,23 +120,22 @@ describe("file modal", () => {
     render(<App />);
     await screen.findByText("file-demo");
 
-    const overlay = () => document.querySelector(".overlay");
     const open = async () => {
       await user.click(screen.getByText("grill"));
-      await waitFor(() => expect(overlay()?.className).toContain("open"));
+      await screen.findByRole("dialog");
     };
 
     await open();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(overlay()?.className).not.toContain("open");
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     await open();
-    await user.click(overlay() as HTMLElement);
-    expect(overlay()?.className).not.toContain("open");
+    fireEvent.click(document.querySelector(".mantine-Modal-overlay") as HTMLElement);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     await open();
-    await user.click(screen.getByText("×"));
-    expect(overlay()?.className).not.toContain("open");
+    await user.click(within(dialog()).getByRole("button", { name: /close/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
 
@@ -160,7 +158,7 @@ function changeWithSpecs() {
   });
 }
 
-const bodyText = () => document.querySelector(".modal-body")?.textContent ?? "";
+const bodyText = () => dialog().textContent ?? "";
 
 describe("multi-spec modal tabs", () => {
   it("renders one tab per spec file, showing only the active file's content", async () => {
@@ -204,7 +202,7 @@ describe("multi-spec modal tabs", () => {
     await screen.findByText("file-demo");
     await user.click(screen.getByText("grill"));
 
-    await waitFor(() => expect(bodyText()).toBe("only one file"));
+    await within(await screen.findByRole("dialog")).findByText("only one file");
     expect(screen.queryByRole("tab")).toBeNull();
   });
 
@@ -224,7 +222,8 @@ describe("multi-spec modal tabs", () => {
     await user.click(await screen.findByRole("tab", { name: "pdf-export" }));
     await waitFor(() => expect(bodyText()).toContain("PDF body"));
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.click(screen.getByText("specs"));
 
     await waitFor(() => expect(bodyText()).toContain("CSV body"));
