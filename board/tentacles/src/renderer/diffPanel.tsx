@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Group, Modal as MantineModal, Text } from "@mantine/core";
+import { Badge, Button, Group, Modal as MantineModal, Text } from "@mantine/core";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { DiffView } from "./diffView";
 
@@ -75,11 +75,13 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
   );
 
   const label = repoPath.split("/").pop();
+  const fileCount = result && result.ok ? result.files.length : 0;
 
   return (
     <div className="diff-panel">
       <Group className="diff-panel-head" gap="sm" justify="space-between" wrap="nowrap">
         <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Text aria-hidden>⎇</Text>
           <Text className="diff-panel-title" fw={600}>
             Branch diff — {label}
           </Text>
@@ -89,12 +91,51 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
             </Text>
           )}
         </Group>
-        <Button variant="default" size="compact-xs" onClick={() => setOverlayOpen(true)}>
-          Open in overlay
-        </Button>
+        <Group gap={4} wrap="nowrap" className="diff-tabs">
+          <span className="diff-tab active">Changes</span>
+          <span className="diff-tab">
+            Files <b>{fileCount}</b>
+          </span>
+          <span className="diff-tab">Checks</span>
+          <span className="diff-tab">Insights</span>
+          <Button
+            variant="light"
+            color="magenta"
+            size="compact-sm"
+            onClick={() => setOverlayOpen(true)}
+            rightSection={<span aria-hidden>▾</span>}
+          >
+            Review
+          </Button>
+        </Group>
       </Group>
       <div className="diff-body">
         <DiffView result={result} getFullFile={getFullFile} onOpenFile={openFileExternally} />
+      </div>
+      <div className="ai-review">
+        <Group gap="xs" wrap="nowrap">
+          <Text aria-hidden>✨</Text>
+          <Text fw={600} size="sm">
+            AI Review Summary
+          </Text>
+          <Badge size="xs" variant="light" color="magenta">
+            BETA
+          </Badge>
+          <Group gap={6} ml="auto" wrap="nowrap">
+            <Badge variant="light" color="yellow" size="sm">
+              improvements
+            </Badge>
+            <Badge variant="light" color="teal" size="sm">
+              no issues
+            </Badge>
+            <Badge variant="light" color="green" size="sm">
+              ready to review
+            </Badge>
+          </Group>
+        </Group>
+        <Text size="xs" c="dimmed" mt={4}>
+          The automated review summary appears here once a review has run on this branch.
+        </Text>
       </div>
       <MantineModal
         opened={overlayOpen}

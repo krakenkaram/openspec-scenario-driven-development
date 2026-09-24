@@ -1,4 +1,4 @@
-import { Badge, Box, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
+import { Badge, Box, Group, Loader, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
 import type { RepositoryGroup } from "../shared/ipc-contract";
 import { worktreeLeaves, worktreeStatus, worktreeDirName, type WorktreeLeaf } from "./worktrees";
 
@@ -175,6 +175,31 @@ export function Sidebar({
 }) {
   return (
     <Box component="aside" className="sidebar" style={{ width, flex: "0 0 auto", overflowY: "auto" }}>
+      <Box className="sidebar-head" p="sm">
+        <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={2}>
+          Workspace
+        </Text>
+        <Group gap={6} justify="space-between" wrap="nowrap" mb="xs">
+          <Group gap={4} wrap="nowrap">
+            <Text fw={700}>OpenSpec</Text>
+            <Text c="dimmed" aria-hidden>
+              ⌄
+            </Text>
+          </Group>
+          <Text c="dimmed" aria-hidden title="Edit workspace">
+            ✎
+          </Text>
+        </Group>
+        <TextInput
+          size="xs"
+          variant="filled"
+          radius="md"
+          placeholder="Search repositories…"
+          leftSection={<span aria-hidden>🔍</span>}
+          aria-label="Search repositories"
+          readOnly
+        />
+      </Box>
       <Stack gap={4} p="xs">
         {groups.map((g) => (
           <SidebarRepo

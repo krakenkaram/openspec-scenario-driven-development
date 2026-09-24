@@ -23,10 +23,49 @@ type NodeTone = "done" | "progress" | "pending" | "na";
 
 const toneColor: Record<NodeTone, string> = {
   done: "teal",
-  progress: "blue",
+  progress: "magenta",
   pending: "gray",
   na: "gray",
 };
+
+const phaseIcon: Record<string, string> = {
+  grill: "📋",
+  proposal: "💬",
+  specs: "📖",
+  design: "🎨",
+  tasks: "☑️",
+  apply: "✨",
+  review: "👥",
+  done: "🏁",
+};
+
+function nodeStyle(tone: NodeTone): React.CSSProperties {
+  const base: React.CSSProperties = { borderRadius: 12, minWidth: 108, background: "var(--mantine-color-dark-6)" };
+  if (tone === "done") return { ...base, border: "1px solid color-mix(in srgb, var(--mantine-color-teal-6) 55%, transparent)" };
+  if (tone === "progress")
+    return {
+      ...base,
+      border: "1px solid var(--mantine-color-magenta-6)",
+      boxShadow: "0 0 0 1px var(--mantine-color-magenta-6), 0 0 16px color-mix(in srgb, var(--mantine-color-magenta-6) 40%, transparent)",
+    };
+  return { ...base, border: "1px solid var(--mantine-color-default-border)", opacity: tone === "na" ? 0.5 : 1 };
+}
+
+function NodeBody({ phase, state, tone }: { phase: string; state: React.ReactNode; tone: NodeTone }) {
+  return (
+    <Stack gap={3} align="center" py={8} px="sm">
+      <Text size="lg" aria-hidden lh={1}>
+        {phaseIcon[phase] ?? "•"}
+      </Text>
+      <Text size="xs" fw={700} tt="capitalize" c={tone === "progress" ? "magenta" : undefined}>
+        {phase}
+      </Text>
+      <Text size="xs" component="div" c={tone === "pending" || tone === "na" ? "dimmed" : toneColor[tone]}>
+        {state}
+      </Text>
+    </Stack>
+  );
+}
 
 function Node({
   phase,
@@ -39,33 +78,16 @@ function Node({
   tone: NodeTone;
   onOpen?: () => void;
 }) {
-  const body = (
-    <Stack gap={2} align="center">
-      <Text size="xs" fw={600} tt="uppercase" c="dimmed">
-        {phase}
-      </Text>
-      <Text size="sm" component="div" c={tone === "pending" || tone === "na" ? "dimmed" : toneColor[tone]}>
-        {state}
-      </Text>
-    </Stack>
-  );
-  const border = `1px solid var(--mantine-color-${tone === "pending" || tone === "na" ? "gray" : toneColor[tone]}-light-color)`;
   if (onOpen) {
     return (
-      <UnstyledButton
-        data-phase={phase}
-        data-tone={tone}
-        onClick={onOpen}
-        p="xs"
-        style={{ borderRadius: 8, border, minWidth: 96 }}
-      >
-        {body}
+      <UnstyledButton data-phase={phase} data-tone={tone} onClick={onOpen} style={nodeStyle(tone)}>
+        <NodeBody phase={phase} state={state} tone={tone} />
       </UnstyledButton>
     );
   }
   return (
-    <Box data-phase={phase} data-tone={tone} p="xs" style={{ borderRadius: 8, border, minWidth: 96, opacity: tone === "na" ? 0.5 : 1 }}>
-      {body}
+    <Box data-phase={phase} data-tone={tone} style={nodeStyle(tone)}>
+      <NodeBody phase={phase} state={state} tone={tone} />
     </Box>
   );
 }
@@ -130,21 +152,25 @@ function DoneNode({ c }: { c: Change }) {
   if (c.pr) {
     const tone: NodeTone = c.complete ? "done" : "progress";
     const state = c.pr.state === "MERGED" ? "✓ merged" : c.pr.state.toLowerCase();
-    const border = `1px solid var(--mantine-color-${toneColor[tone]}-light-color)`;
     return (
       <Anchor
+        className="pr-node"
+        data-phase="done"
+        data-tone={tone}
         href={c.pr.url}
         target="_blank"
         rel="noopener"
         underline="never"
-        p="xs"
-        style={{ borderRadius: 8, border, minWidth: 96 }}
+        style={nodeStyle(tone)}
       >
-        <Stack gap={2} align="center">
-          <Text size="xs" fw={600} tt="uppercase" c="dimmed">
+        <Stack gap={3} align="center" py={8} px="sm">
+          <Text size="lg" aria-hidden lh={1}>
+            🏁
+          </Text>
+          <Text size="xs" fw={700} tt="capitalize" c={tone === "progress" ? "magenta" : undefined}>
             done
           </Text>
-          <Text size="sm" c={toneColor[tone]}>
+          <Text size="xs" c={toneColor[tone]}>
             PR ↗ {state}
           </Text>
         </Stack>
@@ -195,7 +221,10 @@ export function ChangeCard({
       radius="md"
       style={{ opacity: removing ? 0.4 : 1, transition: reduceMotion ? undefined : "opacity 180ms ease" }}
     >
-      <Group gap="xs" mb="sm" wrap="wrap">
+      <Group gap="xs" mb="md" wrap="wrap">
+        <Text aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>
+          🐙
+        </Text>
         <Title order={2} size="h4" style={{ margin: 0 }}>
           {c.change}
         </Title>
@@ -242,6 +271,20 @@ export function ChangeCard({
         <Button variant="default" size="compact-xs" onClick={() => onArchive(c)} disabled={busy}>
           {busy ? "Archiving…" : "Archive"}
         </Button>
+        {c.pr && (
+          <Button
+            component="a"
+            href={c.pr.url}
+            target="_blank"
+            rel="noopener"
+            color="magenta"
+            size="compact-sm"
+            style={{ marginLeft: "auto" }}
+            rightSection={<span aria-hidden>↗</span>}
+          >
+            Open in PR
+          </Button>
+        )}
       </Group>
       <Group gap="xs" wrap="wrap" align="stretch">
         {c.phases.map((p, i) => (

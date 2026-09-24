@@ -28,9 +28,27 @@ const purple: MantineColorsTuple = [
   "#2a1840",
 ];
 
+// Deep navy shell. Overrides Mantine's `dark` scale so the body, panels, cards
+// and borders render as the Tentacles navy in dark mode. Index mapping Mantine
+// consumes: 0 = text, 2 = dimmed text, 4 = default border, 5 = hover, 6 = default
+// surface (cards), 7 = body background, 8-9 = deepest (rail).
+const navy: MantineColorsTuple = [
+  "#e6edf7",
+  "#c7d0e0",
+  "#8792ad",
+  "#5a6685",
+  "#2b3654",
+  "#222c46",
+  "#1a2238",
+  "#0c1120",
+  "#080b14",
+  "#05070e",
+];
+
 export const theme = createTheme({
   primaryColor: "magenta",
   primaryShade: { light: 6, dark: 6 },
   respectReducedMotion: true,
-  colors: { magenta, purple },
+  defaultRadius: "md",
+  colors: { magenta, purple, dark: navy },
 });

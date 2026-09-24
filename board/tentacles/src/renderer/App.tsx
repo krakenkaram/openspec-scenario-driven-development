@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, Title, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
+import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, TextInput, Title, UnstyledButton, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -17,6 +17,34 @@ const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
 
 // Mantine owns the colour scheme end to end; app.css keys its diff-renderer and
 // markdown colour variables off Mantine's [data-mantine-color-scheme] attribute.
+// The far-left workspace rail: switch between workspaces. Decorative for now —
+// the app scans a single configured root — but present to match the shell.
+function WorkspaceRail() {
+  const workspaces = [
+    { key: "os", label: "🐙", title: "OpenSpec", active: true },
+    { key: "w", label: "W", title: "Wings" },
+    { key: "c", label: "C", title: "Cloud" },
+    { key: "d", label: "D", title: "Devices" },
+  ];
+  return (
+    <Box component="nav" className="ws-rail" aria-label="Workspaces">
+      <UnstyledButton className="ws-rail-top" title="New workspace" aria-label="New workspace">
+        +
+      </UnstyledButton>
+      <Stack gap="xs" align="center" className="ws-rail-list">
+        {workspaces.map((w) => (
+          <div key={w.key} className={`ws-avatar${w.active ? " active" : ""}`} title={w.title} aria-label={w.title}>
+            {w.label}
+          </div>
+        ))}
+        <UnstyledButton className="ws-avatar ws-avatar-add" title="Add workspace" aria-label="Add workspace">
+          +
+        </UnstyledButton>
+      </Stack>
+    </Box>
+  );
+}
+
 function ThemeToggle() {
   const { setColorScheme } = useMantineColorScheme();
   const computed = useComputedColorScheme("dark", { getInitialValueInEffect: true });
@@ -402,66 +430,68 @@ export default function App() {
 
   return (
     <MantineProvider theme={theme} defaultColorScheme="auto">
-      <Group
-        component="header"
-        justify="space-between"
-        wrap="wrap"
-        px="lg"
-        py="md"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-          position: "sticky",
-          top: 0,
-          zIndex: 5,
-          background: "var(--mantine-color-body)",
-        }}
-      >
-        <Group gap="xs">
-          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={24} height={24} />
+      <Group component="header" className="topbar" justify="space-between" wrap="nowrap" gap="md">
+        <Group gap="xs" wrap="nowrap" className="topbar-brand">
+          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={26} height={26} />
           <Title order={1} size="h4" style={{ margin: 0 }}>
             Tentacles
           </Title>
         </Group>
-        <Group gap="sm">
+        <div className="topbar-search">
+          <TextInput
+            variant="filled"
+            radius="md"
+            placeholder="Search repositories, specs, issues…"
+            leftSection={<span aria-hidden>🔍</span>}
+            rightSection={<kbd className="kbd">⌘K</kbd>}
+            rightSectionWidth={52}
+            aria-label="Search"
+            readOnly
+          />
+        </div>
+        <Group gap="xs" wrap="nowrap">
+          <ThemeToggle />
+          <ActionIcon variant="subtle" color="gray" className="bell" title="Notifications" aria-label="Notifications">
+            🔔
+          </ActionIcon>
           <ActionIcon variant="subtle" color="gray" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
             ⚙
           </ActionIcon>
-          <ThemeToggle />
-          <Box
-            component="span"
-            data-stale={stale || undefined}
-            title={stale ? "stale" : "live"}
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              display: "inline-block",
-              background: stale ? "var(--mantine-color-orange-6)" : "var(--mantine-color-teal-6)",
-            }}
-          />
-          <Text size="sm" c="dimmed">
-            {statusText}
-          </Text>
+          <Group gap={8} wrap="nowrap" className="topbar-status" ml="xs">
+            <Box
+              component="span"
+              data-stale={stale || undefined}
+              title={stale ? "stale" : "live"}
+              className="status-dot"
+              style={{ background: stale ? "var(--mantine-color-orange-6)" : "var(--mantine-color-teal-6)" }}
+            />
+            <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              {statusText}
+            </Text>
+          </Group>
         </Group>
       </Group>
-      <div className="layout" ref={layoutRef}>
-        <Sidebar
-          groups={grouped}
-          expanded={expanded}
-          selection={selection}
-          width={sidebarWidth}
-          onToggle={toggleRepo}
-          onSelectRepo={selectRepo}
-          onSelectWorktree={selectWorktree}
-        />
-        <div
-          className="sb-resize"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          onMouseDown={startResize}
-        />
-        <main>{main}</main>
+      <div className="app-body">
+        <WorkspaceRail />
+        <div className="layout" ref={layoutRef}>
+          <Sidebar
+            groups={grouped}
+            expanded={expanded}
+            selection={selection}
+            width={sidebarWidth}
+            onToggle={toggleRepo}
+            onSelectRepo={selectRepo}
+            onSelectWorktree={selectWorktree}
+          />
+          <div
+            className="sb-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={startResize}
+          />
+          <main>{main}</main>
+        </div>
       </div>
       <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
       <MantineModal

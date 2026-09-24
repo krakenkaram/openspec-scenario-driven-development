@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { mockApi } from "./test-fixtures";
@@ -121,7 +121,8 @@ describe("settings — Schemas tab: scope pills and install/uninstall", () => {
     await openSchemasTab(user);
     await screen.findByText("atdd-driven");
 
-    expect(screen.queryByRole("button", { name: /create|new schema|add schema|edit/i })).toBeNull();
-    expect(screen.queryByRole("textbox")).toBeNull();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: /create|new schema|add schema|edit/i })).toBeNull();
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
   });
 });

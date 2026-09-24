@@ -66,7 +66,7 @@ describe("the branch diff opens in an on-demand overlay", () => {
     await screen.findByText("new"); // inline diff present
     expect(document.querySelector("[data-diff-overlay]")).toBeNull(); // overlay closed by default
 
-    await user.click(screen.getByRole("button", { name: /open in overlay/i }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
     const overlay = await waitFor(() => {
       const el = document.querySelector("[data-diff-overlay]");
       expect(el).not.toBeNull();
