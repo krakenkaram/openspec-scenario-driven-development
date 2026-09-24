@@ -26,7 +26,11 @@ describe("worktree-detail view: change chain(s) above the branch diff", () => {
     // one change card, and the inline diff, both in the main panel
     expect(screen.getByRole("heading", { level: 2, name: "solo-change" })).toBeInTheDocument();
     expect(document.querySelectorAll("[data-change-card]")).toHaveLength(1);
-    expect(document.querySelector(".worktree-detail .diff-panel")).not.toBeNull();
+    const diff = document.querySelector(".worktree-detail .diff-panel");
+    expect(diff).not.toBeNull();
+    // the change chain renders ABOVE the branch diff
+    const card = screen.getByRole("heading", { level: 2, name: "solo-change" });
+    expect(card.compareDocumentPosition(diff as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows two change cards above a single diff for a two-change worktree", async () => {

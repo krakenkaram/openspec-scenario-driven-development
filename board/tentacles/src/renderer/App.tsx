@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MantineProvider, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
+import { MantineProvider, Stack, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -358,8 +358,8 @@ export default function App() {
       .flatMap((g) => g.worktrees)
       .filter((c) => c.repoPath === selectedWorktreePath);
     main = (
-      <div className="worktree-detail">
-        <div className="worktree-detail-nodes">
+      <Stack className="worktree-detail" gap="md">
+        <Stack gap="sm">
           {worktreeChanges.map((c) => (
             <ChangeCard
               key={keyOf(c)}
@@ -371,9 +371,9 @@ export default function App() {
               removing={removing.has(keyOf(c))}
             />
           ))}
-        </div>
+        </Stack>
         <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />
-      </div>
+      </Stack>
     );
   } else {
     main = (
