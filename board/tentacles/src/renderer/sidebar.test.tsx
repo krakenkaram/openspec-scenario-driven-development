@@ -56,7 +56,7 @@ describe("layout: top bar stays, sidebar is chrome-free, nothing selected shows 
     await screen.findByText("wings-core");
 
     // top bar controls
-    expect(screen.getByText("🗂️ OpenSpec Board")).toBeInTheDocument();
+    expect(screen.getByText("🐙 Tentacles")).toBeInTheDocument();
     expect(screen.getByTitle("Settings")).toBeInTheDocument();
     expect(screen.getByTitle("Toggle dark / light")).toBeInTheDocument();
     expect(screen.getByText(/change\(s\) ·/)).toBeInTheDocument();

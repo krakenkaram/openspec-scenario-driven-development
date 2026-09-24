@@ -385,7 +385,7 @@ export default function App() {
   return (
     <MantineProvider theme={theme} defaultColorScheme="auto">
       <header>
-        <h1>🗂️ OpenSpec Board</h1>
+        <h1>🐙 Tentacles</h1>
         <div className="meta">
           <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
             ⚙
