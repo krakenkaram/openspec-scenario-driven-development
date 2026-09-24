@@ -451,6 +451,9 @@ export interface BootstrapDeps {
   Tray?: typeof import("electron").Tray;
   Menu?: typeof import("electron").Menu;
   nativeImage?: typeof import("electron").nativeImage;
+  // Absolute path to the tray icon PNG (a sibling @2x is auto-picked by Electron).
+  // Supplied by main.ts on darwin; when omitted the tray falls back to a titled glyph.
+  trayIconPath?: string;
 }
 
 // Ordered startup coordinator. Registers IPC handlers BEFORE any window can call
@@ -475,6 +478,7 @@ export async function bootstrap({
   Tray,
   Menu,
   nativeImage,
+  trayIconPath,
 }: BootstrapDeps) {
   registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup, revealItem);
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
@@ -526,8 +530,8 @@ export async function bootstrap({
     });
 
     if (Tray && Menu && nativeImage) {
-      tray = new Tray(nativeImage.createEmpty());
-      tray.setTitle("🐙");
+      tray = new Tray(trayIconPath ? nativeImage.createFromPath(trayIconPath) : nativeImage.createEmpty());
+      if (!trayIconPath) tray.setTitle("🐙");
       tray.on("click", () => {
         const win = currentWindow();
         if (!win) {

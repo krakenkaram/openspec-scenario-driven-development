@@ -114,6 +114,9 @@ app.whenReady().then(() => {
     Tray,
     Menu,
     nativeImage,
+    trayIconPath: app.isPackaged
+      ? path.join(process.resourcesPath, "tray.png")
+      : path.join(__dirname, "../../icons/tray.png"),
     setup: {
       repoRoot: core.resolveBundleRoot(),
       schemasRoot: core.resolveSchemasRoot(app.isPackaged, process.resourcesPath, core.resolveBundleRoot()),

@@ -9,7 +9,7 @@ import { Sidebar, type Selection } from "./sidebar";
 import { DiffPanel } from "./diffPanel";
 import { SettingsPanel } from "./settings";
 import notificationSoundUrl from "./assets/msn-message.mp3";
-import logoUrl from "./assets/logo.svg";
+import logoUrl from "./assets/logo.png";
 
 const REFRESH_MS = 15000;
 

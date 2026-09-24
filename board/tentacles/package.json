@@ -46,6 +46,14 @@
       {
         "from": "../../openspec/schemas",
         "to": "openspec/schemas"
+      },
+      {
+        "from": "icons/tray.png",
+        "to": "tray.png"
+      },
+      {
+        "from": "icons/tray@2x.png",
+        "to": "tray@2x.png"
       }
     ],
     "directories": {
@@ -54,6 +62,7 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.developer-tools",
+      "icon": "icons/icon.icns",
       "identity": null
     }
   },
