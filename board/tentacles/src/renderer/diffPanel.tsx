@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Group, Text } from "@mantine/core";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { DiffView } from "./diffView";
 
@@ -62,14 +63,16 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
 
   return (
     <div className="diff-panel">
-      <div className="diff-panel-head">
-        <span className="diff-panel-title">Branch diff — {repoPath.split("/").pop()}</span>
+      <Group className="diff-panel-head" gap="sm" justify="flex-start">
+        <Text className="diff-panel-title" fw={600}>
+          Branch diff — {repoPath.split("/").pop()}
+        </Text>
         {staleRefresh && (
-          <span className="diff-stale" title="The last refresh failed; showing the previous diff.">
+          <Text className="diff-stale" c="orange" size="sm" title="The last refresh failed; showing the previous diff.">
             couldn't refresh
-          </span>
+          </Text>
         )}
-      </div>
+      </Group>
       <div className="diff-body">
         <DiffView
           result={result}

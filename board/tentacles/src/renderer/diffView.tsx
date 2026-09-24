@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button, Text } from "@mantine/core";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { highlightLine, languageForPath } from "./highlight";
 
@@ -212,13 +213,13 @@ export function DiffView({
   };
 
   if (result === null) {
-    return <div className="diff-empty">Loading…</div>;
+    return <Text className="diff-empty" c="dimmed" p="md">Loading…</Text>;
   }
   if (!result.ok) {
-    return <div className="diff-empty">Could not load diff: {result.error}</div>;
+    return <Text className="diff-empty" c="red" p="md">Could not load diff: {result.error}</Text>;
   }
   if (files.length === 0) {
-    return <div className="diff-empty">No changes on this branch yet.</div>;
+    return <Text className="diff-empty" c="dimmed" p="md">No changes on this branch yet.</Text>;
   }
 
   const isExpanded = current ? expanded.has(current.path) : false;
@@ -240,19 +241,21 @@ export function DiffView({
           <div className="diff-file-head">
             <span className={`diff-status ${current.status}`}>{current.status}</span>
             {onOpenFile ? (
-              <button
+              <Button
                 className="diff-path diff-path-btn"
+                variant="subtle"
+                size="compact-xs"
                 title={`Open ${current.path} in your editor`}
                 onClick={() => onOpenFile(current.path)}
               >
                 {current.path}
-              </button>
+              </Button>
             ) : (
               <span className="diff-path">{current.path}</span>
             )}
-            <button className="diff-expand" onClick={() => void toggleExpand(current.path)}>
+            <Button className="diff-expand" variant="default" size="compact-xs" onClick={() => void toggleExpand(current.path)}>
               {isExpanded ? "Collapse" : "Expand full file"}
-            </button>
+            </Button>
           </div>
         )}
         {shown && <FileLines file={shown} />}
