@@ -9,4 +9,10 @@ describe("app branding — header", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /tentacles/i })).toBeInTheDocument();
   });
+
+  it("shows the Tentacles logo in the header", async () => {
+    mockApi();
+    render(<App />);
+    expect(await screen.findByRole("img", { name: /tentacles/i })).toBeInTheDocument();
+  });
 });

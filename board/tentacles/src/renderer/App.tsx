@@ -9,6 +9,7 @@ import { Sidebar, type Selection } from "./sidebar";
 import { DiffPanel } from "./diffPanel";
 import { SettingsPanel } from "./settings";
 import notificationSoundUrl from "./assets/msn-message.mp3";
+import logoUrl from "./assets/logo.svg";
 
 const REFRESH_MS = 15000;
 
@@ -385,7 +386,8 @@ export default function App() {
   return (
     <MantineProvider theme={theme} defaultColorScheme="auto">
       <header>
-        <h1>🐙 Tentacles</h1>
+        <img className="brand-logo" src={logoUrl} alt="Tentacles" width={24} height={24} />
+        <h1>Tentacles</h1>
         <div className="meta">
           <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
             ⚙
