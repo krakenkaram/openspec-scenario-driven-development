@@ -95,7 +95,7 @@
 
 /* AI Review Summary footer */
 .ai-review {
-  border-top:1px solid var(--border); padding:12px 16px; background:var(--mantine-color-dark-6);
+  border-top:1px solid var(--border); padding:12px 16px; background:var(--mantine-color-default);
 }
 
 /* Worktree-detail: change chain(s) pinned above the worktree's single live diff */

@@ -40,7 +40,7 @@ const phaseIcon: Record<string, string> = {
 };
 
 function nodeStyle(tone: NodeTone): React.CSSProperties {
-  const base: React.CSSProperties = { borderRadius: 12, minWidth: 108, background: "var(--mantine-color-dark-6)" };
+  const base: React.CSSProperties = { borderRadius: 12, minWidth: 108, background: "var(--mantine-color-default)" };
   if (tone === "done") return { ...base, border: "1px solid color-mix(in srgb, var(--mantine-color-teal-6) 55%, transparent)" };
   if (tone === "progress")
     return {

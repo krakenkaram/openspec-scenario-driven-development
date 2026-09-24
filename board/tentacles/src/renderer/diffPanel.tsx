@@ -121,20 +121,12 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
           <Badge size="xs" variant="light" color="magenta">
             BETA
           </Badge>
-          <Group gap={6} ml="auto" wrap="nowrap">
-            <Badge variant="light" color="yellow" size="sm">
-              improvements
-            </Badge>
-            <Badge variant="light" color="teal" size="sm">
-              no issues
-            </Badge>
-            <Badge variant="light" color="green" size="sm">
-              ready to review
-            </Badge>
-          </Group>
+          <Badge size="sm" variant="light" color="gray" ml="auto">
+            No review has run yet
+          </Badge>
         </Group>
         <Text size="xs" c="dimmed" mt={4}>
-          The automated review summary appears here once a review has run on this branch.
+          An automated review summary will appear here once a review has run on this branch.
         </Text>
       </div>
       <MantineModal
