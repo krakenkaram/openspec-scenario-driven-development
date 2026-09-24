@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import type { ArchiveResult } from "../shared/ipc-contract";
 import { makeChange, makeStatus, mockApi, selectRepo } from "./test-fixtures";
+
+// The card's own "Archive" button opens a confirmation dialog; the dialog then
+// carries its own confirm button. Scope confirm/cancel clicks to the dialog so
+// they never collide with the card control.
+const confirmArchive = async (user: ReturnType<typeof userEvent.setup>) => {
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: /^Archive/ }));
+};
 
 describe("archive", () => {
   beforeEach(() => {
@@ -13,7 +21,6 @@ describe("archive", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("confirmed archive calls the bridge and removes the row", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const c = makeChange({ change: "arch-me", repoPath: "/Code/repo-a" });
     const api = mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
     const user = userEvent.setup();
@@ -21,13 +28,13 @@ describe("archive", () => {
     render(<App />);
     await screen.findByText("arch-me");
     await user.click(screen.getByText("Archive"));
+    await confirmArchive(user);
 
     expect(api.archive).toHaveBeenCalledWith({ repoPath: "/Code/repo-a", change: "arch-me" });
     await waitFor(() => expect(screen.queryByText("arch-me")).toBeNull());
   });
 
   it("cancelled confirmation performs no archive", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     const c = makeChange({ change: "keep-me" });
     const api = mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
     const user = userEvent.setup();
@@ -35,13 +42,14 @@ describe("archive", () => {
     render(<App />);
     await screen.findByText("keep-me");
     await user.click(screen.getByText("Archive"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(api.archive).not.toHaveBeenCalled();
     expect(screen.getByText("keep-me")).toBeInTheDocument();
   });
 
   it("a failed archive surfaces the error and keeps the row", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
     const c = makeChange({ change: "fail-me" });
     mockApi({
@@ -53,6 +61,7 @@ describe("archive", () => {
     render(<App />);
     await screen.findByText("fail-me");
     await user.click(screen.getByText("Archive"));
+    await confirmArchive(user);
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalled());
     expect(String(alertSpy.mock.calls[0]?.[0])).toContain("boom");
@@ -60,7 +69,6 @@ describe("archive", () => {
   });
 
   it("disables the control in-flight, blocks a duplicate submission, and re-enables on failure", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
     let resolveArchive!: (v: ArchiveResult) => void;
     const archive = vi.fn(() => new Promise<ArchiveResult>((r) => (resolveArchive = r)));
@@ -70,8 +78,9 @@ describe("archive", () => {
     render(<App />);
     await screen.findByText("busy-me");
     await user.click(screen.getByText("Archive"));
+    await confirmArchive(user);
 
-    // in-flight: the control is disabled and relabelled
+    // in-flight: the card control is disabled and relabelled
     const btn = await screen.findByRole("button", { name: "Archiving…" });
     expect(btn).toBeDisabled();
     expect(archive).toHaveBeenCalledTimes(1);

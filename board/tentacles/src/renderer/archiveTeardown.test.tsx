@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import type { TeardownPlan } from "../shared/ipc-contract";
@@ -27,7 +27,6 @@ describe("archive with worktree teardown — single informed confirmation", () =
   afterEach(() => vi.restoreAllMocks());
 
   it("declining the single confirmation performs no archive or teardown", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     const c = makeChange({ change: "tear-me", repoPath: "/Code/repo-a" });
     const api = mockApi({
       getStatus: vi.fn().mockResolvedValue(makeStatus([c])),
@@ -39,9 +38,11 @@ describe("archive with worktree teardown — single informed confirmation", () =
     await screen.findByText("tear-me");
     await user.click(screen.getByText("Archive"));
 
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
-    const message = String(confirmSpy.mock.calls[0]?.[0]);
-    for (const w of teardownPlan.warnings) expect(message).toContain(w);
+    // one dialog listing every teardown warning
+    const dialog = await screen.findByRole("dialog");
+    for (const w of teardownPlan.warnings) expect(within(dialog).getByText(w)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(api.archivePlan).toHaveBeenCalledWith({ repoPath: "/Code/repo-a", change: "tear-me" });
     expect(api.archiveExecute).not.toHaveBeenCalled();
@@ -50,7 +51,6 @@ describe("archive with worktree teardown — single informed confirmation", () =
   });
 
   it("accepting the single confirmation executes archive+teardown once with the implied acceptances", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const c = makeChange({ change: "tear-me", repoPath: "/Code/repo-a" });
     const api = mockApi({
       getStatus: vi.fn().mockResolvedValue(makeStatus([c])),
@@ -62,6 +62,8 @@ describe("archive with worktree teardown — single informed confirmation", () =
     render(<App />);
     await screen.findByText("tear-me");
     await user.click(screen.getByText("Archive"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /remove worktree/i }));
 
     await waitFor(() => expect(api.archiveExecute).toHaveBeenCalledTimes(1));
     expect(api.archiveExecute).toHaveBeenCalledWith({
@@ -70,8 +72,7 @@ describe("archive with worktree teardown — single informed confirmation", () =
       acceptUnmerged: true,
       acceptDirty: true,
     });
-    // No second dialog: the one confirmation authorised the whole teardown.
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    // The plain archive path is never taken for a teardown.
     expect(api.archive).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByText("tear-me")).toBeNull());
   });
@@ -85,7 +86,6 @@ describe("archive with worktree teardown — primary reason and partial outcomes
   afterEach(() => vi.restoreAllMocks());
 
   it("tells the user the primary worktree is kept because it is the primary checkout", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const c = makeChange({ change: "last-prim", repoPath: "/Code/repo-a" });
     const primaryPlan: TeardownPlan = {
       applies: false,
@@ -107,15 +107,16 @@ describe("archive with worktree teardown — primary reason and partial outcomes
     await screen.findByText("last-prim");
     await user.click(screen.getByText("Archive"));
 
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
-    expect(String(confirmSpy.mock.calls[0]?.[0])).toMatch(/primary checkout/i);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/primary checkout/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Archive/ }));
+
     // Plain archive path (the worktree is kept), never the teardown execute.
     await waitFor(() => expect(api.archive).toHaveBeenCalledWith({ repoPath: "/Code/repo-a", change: "last-prim" }));
     expect(api.archiveExecute).not.toHaveBeenCalled();
   });
 
   it("surfaces a replanned branch-not-deleted outcome instead of reporting silent success", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
     const c = makeChange({ change: "tear-me", repoPath: "/Code/repo-a" });
     // Plan shown as merged (so the renderer sends acceptUnmerged:false)...
@@ -144,8 +145,11 @@ describe("archive with worktree teardown — primary reason and partial outcomes
     render(<App />);
     await screen.findByText("tear-me");
     await user.click(screen.getByText("Archive"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /remove worktree/i }));
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalled());
     expect(String(alertSpy.mock.calls[0]?.[0])).toMatch(/branch was not deleted/i);
+    void api;
   });
 });

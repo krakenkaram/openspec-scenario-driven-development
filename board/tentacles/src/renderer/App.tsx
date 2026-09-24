@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MantineProvider, Stack, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
+import { Button, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -80,6 +80,13 @@ export default function App() {
     sections: [],
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirm, setConfirm] = useState<null | {
+    title: string;
+    detail?: string;
+    warnings: string[];
+    confirmLabel: string;
+    run: () => Promise<void>;
+  }>(null);
   const [sidebarWidth, setSidebarWidth] = useState(264);
   const layoutRef = useRef<HTMLDivElement>(null);
 
@@ -170,95 +177,95 @@ export default function App() {
     async (c: Change) => {
       const k = keyOf(c);
       if (inFlight.current.has(k)) return; // guard against a duplicate submission
-      inFlight.current.add(k);
-      const release = () => inFlight.current.delete(k);
-      const clearArchiving = () =>
-        setArchiving((prev) => {
-          const next = new Set(prev);
-          next.delete(k);
-          return next;
-        });
 
-      try {
-        const plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
-
-        let confirmed: boolean;
-        let execute: () => Promise<{ ok: boolean; error?: string }>;
-
-        if (plan.applies) {
-          confirmed = window.confirm(
-            [
-              `Archive "${c.change}" and tear down its worktree?`,
-              "",
-              ...plan.warnings,
-              "",
-              "This cannot be undone.",
-            ].join("\n")
-          );
-          execute = async () => {
-            const r = await window.electronAPI.archiveExecute({
-              repoPath: c.repoPath,
-              change: c.change,
-              acceptUnmerged: !plan.branchMerged,
-              acceptDirty: plan.dirty,
-            });
-            if (!r.archived) return { ok: false, error: r.archiveError || "unknown" };
-            if (r.worktreeRemoved === false) {
-              return { ok: true, error: `Archived, but the worktree could not be removed: ${r.worktreeError || "unknown"}` };
-            }
-            if (r.branchDeleted === false) {
-              return { ok: true, error: `Archived and worktree removed, but the branch was not deleted: ${r.branchError || "unknown"}` };
-            }
-            return { ok: true };
-          };
-        } else if (plan.keptReason === "primary") {
-          confirmed = window.confirm(
-            `Archive "${c.change}"?\n\nThis is the last change in this worktree, but the worktree will be kept because it is the primary checkout.`
-          );
-          execute = async () => {
-            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
-            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
-          };
-        } else {
-          confirmed = window.confirm(
-            `Archive "${c.change}"?\n\nThis runs \`openspec archive\` (moves it to changes/archive/). Reversible on disk.`
-          );
-          execute = async () => {
-            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
-            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
-          };
-        }
-
-        if (!confirmed) {
-          release();
-          return;
-        }
+      const runExecute = async (execute: () => Promise<{ ok: boolean; error?: string }>) => {
+        if (inFlight.current.has(k)) return;
+        inFlight.current.add(k);
         setArchiving((prev) => new Set(prev).add(k));
-
-        const res = await execute();
-        if (res.ok) {
-          if (res.error) window.alert(res.error); // archive succeeded; teardown was partial
-          clearArchiving();
-          setRemoving((prev) => new Set(prev).add(k));
-          setTimeout(() => {
-            release();
-            setArchived((prev) => new Set(prev).add(k));
-            setRemoving((prev) => {
-              const next = new Set(prev);
-              next.delete(k);
-              return next;
-            });
-            void refresh();
-          }, 320);
-        } else {
-          window.alert("Archive failed: " + res.error);
-          release();
+        const clearArchiving = () =>
+          setArchiving((prev) => {
+            const next = new Set(prev);
+            next.delete(k);
+            return next;
+          });
+        try {
+          const res = await execute();
+          if (res.ok) {
+            if (res.error) window.alert(res.error); // archive succeeded; teardown was partial
+            clearArchiving();
+            setRemoving((prev) => new Set(prev).add(k));
+            setTimeout(() => {
+              inFlight.current.delete(k);
+              setArchived((prev) => new Set(prev).add(k));
+              setRemoving((prev) => {
+                const next = new Set(prev);
+                next.delete(k);
+                return next;
+              });
+              void refresh();
+            }, 320);
+          } else {
+            window.alert("Archive failed: " + res.error);
+            inFlight.current.delete(k);
+            clearArchiving();
+          }
+        } catch (e) {
+          window.alert("Archive failed: " + e);
+          inFlight.current.delete(k);
           clearArchiving();
         }
-      } catch (e) {
-        window.alert("Archive failed: " + e);
-        release();
-        clearArchiving();
+      };
+
+      const plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
+
+      if (plan.applies) {
+        const execute = async () => {
+          const r = await window.electronAPI.archiveExecute({
+            repoPath: c.repoPath,
+            change: c.change,
+            acceptUnmerged: !plan.branchMerged,
+            acceptDirty: plan.dirty,
+          });
+          if (!r.archived) return { ok: false, error: r.archiveError || "unknown" };
+          if (r.worktreeRemoved === false) {
+            return { ok: true, error: `Archived, but the worktree could not be removed: ${r.worktreeError || "unknown"}` };
+          }
+          if (r.branchDeleted === false) {
+            return { ok: true, error: `Archived and worktree removed, but the branch was not deleted: ${r.branchError || "unknown"}` };
+          }
+          return { ok: true };
+        };
+        setConfirm({
+          title: `Archive "${c.change}" and tear down its worktree?`,
+          detail: "This cannot be undone.",
+          warnings: plan.warnings,
+          confirmLabel: "Archive and remove worktree",
+          run: () => runExecute(execute),
+        });
+      } else if (plan.keptReason === "primary") {
+        const execute = async () => {
+          const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+          return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
+        };
+        setConfirm({
+          title: `Archive "${c.change}"?`,
+          detail: "This is the last change in this worktree, but the worktree will be kept because it is the primary checkout.",
+          warnings: [],
+          confirmLabel: "Archive",
+          run: () => runExecute(execute),
+        });
+      } else {
+        const execute = async () => {
+          const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+          return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
+        };
+        setConfirm({
+          title: `Archive "${c.change}"?`,
+          detail: "This runs `openspec archive` (moves it to changes/archive/). Reversible on disk.",
+          warnings: [],
+          confirmLabel: "Archive",
+          run: () => runExecute(execute),
+        });
       }
     },
     [refresh]
@@ -417,6 +424,37 @@ export default function App() {
         <main>{main}</main>
       </div>
       <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
+      <MantineModal
+        opened={!!confirm}
+        onClose={() => setConfirm(null)}
+        title={confirm?.title}
+        transitionProps={{ duration: 0 }}
+        closeButtonProps={{ "aria-label": "Close" }}
+      >
+        {confirm?.detail && <Text mb="sm">{confirm.detail}</Text>}
+        {confirm && confirm.warnings.length > 0 && (
+          <List spacing="xs" mb="md">
+            {confirm.warnings.map((w, i) => (
+              <List.Item key={i}>{w}</List.Item>
+            ))}
+          </List>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setConfirm(null)}>
+            Cancel
+          </Button>
+          <Button
+            color="red"
+            onClick={() => {
+              const pending = confirm;
+              setConfirm(null);
+              void pending?.run();
+            }}
+          >
+            {confirm?.confirmLabel}
+          </Button>
+        </Group>
+      </MantineModal>
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void refresh()} />
     </MantineProvider>
   );
