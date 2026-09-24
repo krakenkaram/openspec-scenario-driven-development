@@ -6,14 +6,14 @@ test.describe("archive", () => {
     // The renderer archives via window.confirm — accept the native dialog.
     app.page.on("dialog", (d) => d.accept());
 
-    const card = app.page.locator(".change", {
-      has: app.page.locator(".cname", { hasText: "refactor-cleanup" }),
+    const card = app.page.locator("[data-change-card]", {
+      has: app.page.getByRole("heading", { name: "refactor-cleanup" }),
     });
     await expect(card).toBeVisible();
     await card.getByRole("button", { name: "Archive" }).click();
 
     // The card is removed from the board (optimistic hide + re-fetch)...
-    await expect(app.page.locator(".cname", { hasText: "refactor-cleanup" })).toHaveCount(0);
+    await expect(app.page.getByRole("heading", { name: "refactor-cleanup" })).toHaveCount(0);
 
     // ...and the archive IPC actually reached core / the CLI (stub invocation log).
     expect(app.readStubLog()).toContain("openspec archive refactor-cleanup");

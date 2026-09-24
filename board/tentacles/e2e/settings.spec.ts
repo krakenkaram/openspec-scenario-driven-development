@@ -9,7 +9,7 @@ const REPO_BETA = path.join(APP_ROOT, "e2e", "fixtures", "repos", "repo-beta");
 
 test.describe("scan-root settings", () => {
   test("saving a valid root re-scans the board without a restart", async ({ app }) => {
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toBeVisible();
 
     await app.page.getByTitle("Settings").click();
     const input = app.page.getByLabel("Scan root directory");
@@ -18,20 +18,20 @@ test.describe("scan-root settings", () => {
     await app.page.getByRole("button", { name: "Save" }).click();
 
     // repo-beta's change appears; repo-alpha's is gone → the root changed and re-scanned
-    await expect(app.page.locator(".cname", { hasText: "refactor-cleanup" })).toBeVisible();
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toHaveCount(0);
+    await expect(app.page.getByRole("heading", { name: "refactor-cleanup" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toHaveCount(0);
   });
 
   test("an invalid root is rejected inline and nothing changes", async ({ app }) => {
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toBeVisible();
 
     await app.page.getByTitle("Settings").click();
     await app.page.getByLabel("Scan root directory").fill("/no/such/directory/anywhere");
     await app.page.getByRole("button", { name: "Save" }).click();
 
-    await expect(app.page.locator(".settings-error")).toBeVisible();
+    await expect(app.page.locator("[data-settings-error]")).toBeVisible();
     await expect(app.page.getByLabel("Scan root directory")).toBeVisible();
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toBeVisible();
   });
 
   test("Browse fills the input from the native picker, then Save re-scans", async ({ app }) => {
@@ -47,7 +47,7 @@ test.describe("scan-root settings", () => {
       };
     }, REPO_BETA);
 
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toBeVisible();
 
     await app.page.getByTitle("Settings").click();
     const input = app.page.getByLabel("Scan root directory");
@@ -74,7 +74,7 @@ test.describe("scan-root settings", () => {
     expect(call!.properties).toContain("openDirectory");
 
     await app.page.getByRole("button", { name: "Save" }).click();
-    await expect(app.page.locator(".cname", { hasText: "refactor-cleanup" })).toBeVisible();
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toHaveCount(0);
+    await expect(app.page.getByRole("heading", { name: "refactor-cleanup" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toHaveCount(0);
   });
 });

@@ -8,7 +8,7 @@ test.describe("auto-refresh", () => {
     await app.page.clock.install();
     await app.page.reload();
     await app.page.waitForLoadState("domcontentloaded");
-    await expect(app.page.locator(".cname", { hasText: "add-search" })).toBeVisible();
+    await expect(app.page.getByRole("heading", { name: "add-search" })).toBeVisible();
 
     const statusText = app.page.locator("header .meta span", { hasText: "updated" });
     await expect(statusText).toBeVisible();

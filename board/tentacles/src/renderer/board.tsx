@@ -52,6 +52,8 @@ function Node({
   if (onOpen) {
     return (
       <UnstyledButton
+        data-phase={phase}
+        data-tone={tone}
         onClick={onOpen}
         p="xs"
         style={{ borderRadius: 8, border, minWidth: 96 }}
@@ -61,7 +63,7 @@ function Node({
     );
   }
   return (
-    <Box p="xs" style={{ borderRadius: 8, border, minWidth: 96, opacity: tone === "na" ? 0.5 : 1 }}>
+    <Box data-phase={phase} data-tone={tone} p="xs" style={{ borderRadius: 8, border, minWidth: 96, opacity: tone === "na" ? 0.5 : 1 }}>
       {body}
     </Box>
   );

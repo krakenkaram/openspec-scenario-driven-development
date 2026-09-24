@@ -6,11 +6,11 @@ test.describe("theme toggle", () => {
     const getTheme = () =>
       app.page.evaluate(() => document.documentElement.getAttribute("data-theme"));
 
-    await app.page.locator(".theme-btn").click();
+    await app.page.locator("[title='Toggle dark / light']").click();
     const first = await getTheme();
     expect(first === "light" || first === "dark").toBe(true);
 
-    await app.page.locator(".theme-btn").click();
+    await app.page.locator("[title='Toggle dark / light']").click();
     const second = await getTheme();
     expect(second === "light" || second === "dark").toBe(true);
     expect(second).not.toBe(first);

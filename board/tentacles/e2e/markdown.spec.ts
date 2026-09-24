@@ -3,12 +3,12 @@ import { test, expect } from "./helpers/launch";
 // item 6: artifacts render as formatted markdown (React elements), not raw source.
 test.describe("markdown rendering", () => {
   test("the artifact modal renders headings and lists as elements, not raw markdown", async ({ app }) => {
-    const card = app.page.locator(".change", {
-      has: app.page.locator(".cname", { hasText: "ship-export" }),
+    const card = app.page.locator("[data-change-card]", {
+      has: app.page.getByRole("heading", { name: "ship-export" }),
     });
-    await card.locator(".node.clickable", { hasText: "specs" }).click();
+    await card.locator('[data-phase="specs"]').click();
 
-    const body = app.page.locator(".overlay.open .modal-body");
+    const body = app.page.locator("[role='dialog'] .markdown-body");
     await expect(body).toBeVisible();
 
     await expect(body.locator("h1").first()).toBeVisible();

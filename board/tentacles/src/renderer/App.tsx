@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
+import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, Title, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -15,10 +15,9 @@ const REFRESH_MS = 15000;
 
 const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
 
-// Mantine owns the colour scheme. While the board's screens are migrated to Mantine,
-// the resolved scheme is mirrored onto the documentElement's data-theme so the
-// not-yet-migrated styles.css keeps responding to the toggle; this bridge is removed
-// once styles.css is gone.
+// Mantine owns the colour scheme. The resolved scheme is mirrored onto the
+// documentElement's data-theme so app.css (the diff renderer + markdown, which
+// key their colour variables off html[data-theme]) tracks the toggle.
 function ThemeToggle() {
   const { setColorScheme } = useMantineColorScheme();
   const computed = useComputedColorScheme("dark", { getInitialValueInEffect: true });
@@ -26,14 +25,15 @@ function ThemeToggle() {
     document.documentElement.setAttribute("data-theme", computed);
   }, [computed]);
   return (
-    <button
-      className="theme-btn"
+    <ActionIcon
+      variant="subtle"
+      color="gray"
       onClick={() => setColorScheme(computed === "dark" ? "light" : "dark")}
       aria-label="Toggle colour scheme"
       title="Toggle dark / light"
     >
       🌓
-    </button>
+    </ActionIcon>
   );
 }
 
@@ -339,11 +339,23 @@ export default function App() {
 
   let main: React.ReactNode;
   if (!status) {
-    main = <div className="empty">Loading…</div>;
+    main = (
+      <Center p="xl">
+        <Text c="dimmed">Loading…</Text>
+      </Center>
+    );
   } else if ("error" in status) {
-    main = <div className="err">Error: {status.error}</div>;
+    main = (
+      <Center p="xl">
+        <Text c="red">Error: {status.error}</Text>
+      </Center>
+    );
   } else if (grouped.length === 0) {
-    main = <div className="empty">No active OpenSpec changes found across {repoCount} repo(s).</div>;
+    main = (
+      <Center p="xl">
+        <Text c="dimmed">No active OpenSpec changes found across {repoCount} repo(s).</Text>
+      </Center>
+    );
   } else if (selectedGroup) {
     main = (
       <RepoGroup
@@ -384,26 +396,58 @@ export default function App() {
     );
   } else {
     main = (
-      <div className="empty select-hint">
-        Select a repository to view its progress, or a worktree to view its live diff.
-      </div>
+      <Center p="xl">
+        <Text c="dimmed" ta="center" style={{ maxWidth: 420 }}>
+          Select a repository to view its progress, or a worktree to view its live diff.
+        </Text>
+      </Center>
     );
   }
 
   return (
     <MantineProvider theme={theme} defaultColorScheme="auto">
-      <header>
-        <img className="brand-logo" src={logoUrl} alt="Tentacles" width={24} height={24} />
-        <h1>Tentacles</h1>
-        <div className="meta">
-          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
+      <Group
+        component="header"
+        justify="space-between"
+        wrap="wrap"
+        px="lg"
+        py="md"
+        style={{
+          borderBottom: "1px solid var(--mantine-color-default-border)",
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          background: "var(--mantine-color-body)",
+        }}
+      >
+        <Group gap="xs">
+          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={24} height={24} />
+          <Title order={1} size="h4" style={{ margin: 0 }}>
+            Tentacles
+          </Title>
+        </Group>
+        <Group gap="sm">
+          <ActionIcon variant="subtle" color="gray" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
             ⚙
-          </button>
+          </ActionIcon>
           <ThemeToggle />
-          <span className={`dot ${stale ? "stale" : ""}`} />
-          <span>{statusText}</span>
-        </div>
-      </header>
+          <Box
+            component="span"
+            data-stale={stale || undefined}
+            title={stale ? "stale" : "live"}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              display: "inline-block",
+              background: stale ? "var(--mantine-color-orange-6)" : "var(--mantine-color-teal-6)",
+            }}
+          />
+          <Text size="sm" c="dimmed">
+            {statusText}
+          </Text>
+        </Group>
+      </Group>
       <div className="layout" ref={layoutRef}>
         <Sidebar
           groups={grouped}

@@ -338,7 +338,7 @@ export function SettingsPanel({
       </Tabs>
 
       {error && (
-        <Text c="red" mt="sm">
+        <Text data-settings-error c="red" mt="sm">
           {error}
         </Text>
       )}
