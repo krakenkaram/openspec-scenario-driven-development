@@ -1,10 +1,12 @@
-import { test, expect } from "./helpers/launch";
+import { test, expect, selectRepo } from "./helpers/launch";
 
 // artifact-viewing (item 4): a change with more than one capability writes one
 // specs/<capability>/spec.md each. The single specs node must open a modal with
 // one tab per capability; clicking a tab shows that capability's spec on its own.
 test.describe("multi-capability specs", () => {
   test("the specs node shows a tab per capability and switches content on click", async ({ app }) => {
+    await selectRepo(app, "repo-alpha");
+
     const card = app.page.locator("[data-change-card]", {
       has: app.page.getByRole("heading", { name: "ship-export" }),
     });

@@ -240,7 +240,13 @@ export default function App() {
         }
       };
 
-      const plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
+      let plan: Awaited<ReturnType<typeof window.electronAPI.archivePlan>>;
+      try {
+        plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
+      } catch (e) {
+        window.alert("Archive failed: " + e);
+        return;
+      }
 
       if (plan.applies) {
         const execute = async () => {

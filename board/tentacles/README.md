@@ -1,14 +1,14 @@
-# OpenSpec Board — macOS app (`tentacles`)
+# Tentacles — macOS app for the OpenSpec Board (`tentacles`)
 
-A native macOS Electron app for the OpenSpec Board. It renders the same board as
-`board/server.js` (dark-navy theme, phase chain, type badge, PR link, archive
-button, file modal, 15s auto-refresh) but launches from the Dock/Finder with no
-terminal and no localhost port.
+A native macOS Electron app for the OpenSpec Board, branded **Tentacles**. It
+renders the OpenSpec board (navy theme, phase chain, type badge, PR link, archive
+button, file modal, 15s auto-refresh) built on Mantine, and launches from the
+Dock/Finder with no terminal and no localhost port.
 
 ## Architecture
 
 IPC-native — there is **no HTTP server**. The Electron main process invokes the
-board logic directly and exposes it to the renderer over twelve named IPC channels
+board logic directly and exposes it to the renderer over eighteen named IPC channels
 through a minimal preload bridge:
 
 | File | Role |
@@ -16,8 +16,8 @@ through a minimal preload bridge:
 | `main.js` | Electron entry: resolves the login-shell PATH, registers IPC, creates the window, wires lifecycle. |
 | `wiring.js` | Pure, testable wiring (IPC handler factories, secure window, lifecycle, PATH resolution). Takes Electron objects as parameters so tests need no Electron. |
 | `core.js` | The board scan/status/archive/file logic, plus the pure setup install-planner / doctor-checker. |
-| `preload.js` | `contextBridge` exposing exactly `getStatus` / `readFile` / `getDiff` / `getFileDiff` / `archive` / `getSettings` / `setSettings` / `chooseDirectory` / `openPath` / `openFile` / `install` / `doctor`. |
-| `index.html` | The board UI (copied from `board/index.html`; the three data calls swapped to the bridge and the legacy HTTP-only `file://` guard block removed). |
+| `preload.js` | `contextBridge` exposing the status/artifact/diff channels (`getStatus`, `readFile`, `getDiff`, `getFileDiff`), archive channels (`archive`, `archivePlan`, `archiveExecute`), settings + filesystem channels (`getSettings`, `setSettings`, `chooseDirectory`, `openPath`, `openFile`), setup channels (`install`, `doctor`), schema channels (`listSchemas`, `installSchema`, `uninstallSchema`, `openSchemaFile`), and the `onNotificationSound` subscription. |
+| `index.html` | The board UI, rebuilt on Mantine (React components; the data calls go through the bridge). |
 
 The `install` / `doctor` channels back the Settings **Setup** tab (configure the
 machine for Claude / Kiro / Kiro Crew, verify, repair) — see

@@ -32,6 +32,15 @@ export const test = base.extend<{ app: HermeticApp }>({
       `tentacles-e2e-settings-${testInfo.testId}-${Date.now()}.json`
     );
 
+    // Isolated Electron user-data dir per test so renderer localStorage (the
+    // osb-selection / osb-expanded keys and Mantine's colour-scheme value) starts
+    // clean and never leaks between tests — the board is selection-driven, so a
+    // leaked selection would non-deterministically pre-select a repository.
+    const userDataDir = path.join(
+      os.tmpdir(),
+      `tentacles-e2e-udata-${testInfo.testId}-${Date.now()}`
+    );
+
     // On a normal macOS login session Electron launches under its OS sandbox as a
     // user runs it. On a restricted/headless host (CI, a sandboxed shell) that OS
     // sandbox can't initialise, so opt in to --no-sandbox there via E2E_NO_SANDBOX.
@@ -40,7 +49,7 @@ export const test = base.extend<{ app: HermeticApp }>({
     const extraArgs = process.env.E2E_NO_SANDBOX ? ["--no-sandbox", "--disable-gpu"] : [];
 
     const electronApp = await _electron.launch({
-      args: [".", ...extraArgs],
+      args: [".", `--user-data-dir=${userDataDir}`, ...extraArgs],
       cwd: APP_ROOT,
       env: {
         ...process.env,
@@ -83,6 +92,11 @@ export const test = base.extend<{ app: HermeticApp }>({
     }
     try {
       fs.unlinkSync(settingsFile);
+    } catch {
+      /* best effort */
+    }
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
     } catch {
       /* best effort */
     }

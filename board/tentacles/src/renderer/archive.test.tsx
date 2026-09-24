@@ -68,6 +68,24 @@ describe("archive", () => {
     expect(screen.getByText("fail-me")).toBeInTheDocument();
   });
 
+  it("a rejected archive plan surfaces the error and keeps the row", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const c = makeChange({ change: "plan-fail" });
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([c])),
+      archivePlan: vi.fn().mockRejectedValue(new Error("plan boom")),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("plan-fail");
+    await user.click(screen.getByText("Archive"));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    expect(String(alertSpy.mock.calls[0]?.[0])).toContain("plan boom");
+    expect(screen.getByText("plan-fail")).toBeInTheDocument();
+  });
+
   it("disables the control in-flight, blocks a duplicate submission, and re-enables on failure", async () => {
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
     let resolveArchive!: (v: ArchiveResult) => void;

@@ -1,8 +1,10 @@
-import { test, expect } from "./helpers/launch";
+import { test, expect, selectRepo } from "./helpers/launch";
 
 // Group 4 — electron-app-smoke-coverage: "The board renders seeded change data".
 test.describe("board renders seeded data", () => {
   test("phase chain and type/status badges render for a mid-flight change", async ({ app }) => {
+    await selectRepo(app, "repo-alpha");
+
     const card = app.page.locator("[data-change-card]", {
       has: app.page.getByRole("heading", { name: "add-search" }),
     });
@@ -22,9 +24,11 @@ test.describe("board renders seeded data", () => {
   });
 
   test("a behaviour-preserving change carries the REFACTOR badge", async ({ app }) => {
+    await selectRepo(app, "repo-beta");
+
     const card = app.page.locator("[data-change-card]", {
       has: app.page.getByRole("heading", { name: "refactor-cleanup" }),
     });
-    await expect(card.getByText("REFACTOR")).toBeVisible();
+    await expect(card.getByText("REFACTOR", { exact: true })).toBeVisible();
   });
 });
