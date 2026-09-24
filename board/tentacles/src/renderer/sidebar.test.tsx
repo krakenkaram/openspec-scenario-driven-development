@@ -87,9 +87,9 @@ describe("repository selection scopes the main panel; chevron vs body", () => {
     await user.click(await screen.findByText("wings-core"));
 
     // wings-core's two worktree cards show; lonely's does not
-    expect(screen.getByText("wc-a", { selector: ".cname" })).toBeInTheDocument();
-    expect(screen.getByText("wc-b", { selector: ".cname" })).toBeInTheDocument();
-    expect(screen.queryByText("solo", { selector: ".cname" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "wc-a" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "wc-b" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "solo" })).toBeNull();
   });
 
   it("clicking the repository body selects it and auto-expands it", async () => {
@@ -103,7 +103,7 @@ describe("repository selection scopes the main panel; chevron vs body", () => {
 
     expect(wc.className).toContain("selected"); // selected
     expect(wc.querySelectorAll(".sb-leaf")).toHaveLength(2); // auto-expanded
-    expect(screen.getByText("wc-a", { selector: ".cname" })).toBeInTheDocument(); // main scoped to it
+    expect(screen.getByRole("heading", { level: 2, name: "wc-a" })).toBeInTheDocument(); // main scoped to it
   });
 
   it("the chevron toggles expansion only, leaving the selection unchanged", async () => {

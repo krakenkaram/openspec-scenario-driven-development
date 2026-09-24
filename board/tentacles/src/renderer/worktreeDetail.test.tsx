@@ -24,8 +24,8 @@ describe("worktree-detail view: change chain(s) above the branch diff", () => {
     await user.click(await screen.findByTitle("/Code/repo-a"));
 
     // one change card, and the inline diff, both in the main panel
-    expect(screen.getByText("solo-change", { selector: ".cname" })).toBeInTheDocument();
-    expect(document.querySelectorAll(".worktree-detail .change")).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 2, name: "solo-change" })).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-change-card]")).toHaveLength(1);
     expect(document.querySelector(".worktree-detail .diff-panel")).not.toBeNull();
   });
 
@@ -42,9 +42,9 @@ describe("worktree-detail view: change chain(s) above the branch diff", () => {
     render(<App />);
     await user.click(await screen.findByTitle("/Code/wt-x"));
 
-    expect(screen.getByText("change-one", { selector: ".cname" })).toBeInTheDocument();
-    expect(screen.getByText("change-two", { selector: ".cname" })).toBeInTheDocument();
-    expect(document.querySelectorAll(".worktree-detail .change")).toHaveLength(2);
+    expect(screen.getByRole("heading", { level: 2, name: "change-one" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "change-two" })).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-change-card]")).toHaveLength(2);
     // exactly ONE branch diff for the whole worktree, not one per change
     expect(document.querySelectorAll(".diff-panel")).toHaveLength(1);
   });

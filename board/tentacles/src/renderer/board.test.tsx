@@ -12,6 +12,13 @@ beforeEach(() => {
   selectRepo();
 });
 
+// A change card names itself with a level-2 heading; the app title is the only
+// level-1 heading. Reading the level-2 headings in document order is how the
+// board's card order is asserted without reaching for markup classes.
+const cardNames = () => screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+const cardFor = (name: string) =>
+  screen.getByRole("heading", { level: 2, name }).closest("[data-change-card]") as HTMLElement;
+
 describe("the renderer renders the board state", () => {
   it("lists repositories in the sidebar and orders the selected repo's cards", async () => {
     const incomplete = makeChange({ change: "a-incomplete", repo: "repo-a", repoPath: "/Code/repo-a", repositoryId: "/Code/repo-a/.git", repositoryName: "repo-a", type: "feature", complete: false });
@@ -19,7 +26,7 @@ describe("the renderer renders the board state", () => {
     const other = makeChange({ change: "b-other", repo: "repo-b", repoPath: "/Code/repo-b", repositoryId: "/Code/repo-b/.git", repositoryName: "repo-b" });
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([complete, incomplete, other], 2)) });
 
-    const { container } = render(<App />);
+    render(<App />);
     await screen.findByText("repo-a", { selector: ".sb-repo-name" });
 
     // the sidebar lists both repositories in name order
@@ -27,11 +34,10 @@ describe("the renderer renders the board state", () => {
     expect(repoNames).toEqual(["repo-a", "repo-b"]);
 
     // repo-a is the seeded selection: only its cards show, incomplete before complete
-    const names = [...container.querySelectorAll(".cname")].map((e) => e.textContent);
-    expect(names).toEqual(["a-incomplete", "z-complete"]);
+    expect(cardNames()).toEqual(["a-incomplete", "z-complete"]);
     expect(screen.getByText("2 change(s) · 1 complete")).toBeInTheDocument();
     // none of repo-b's changes are in the main panel
-    expect(screen.queryByText("b-other")).toBeNull();
+    expect(screen.queryByRole("heading", { level: 2, name: "b-other" })).toBeNull();
 
     // badges of the visible (repo-a) cards
     expect(screen.getAllByText("FEATURE")).toHaveLength(1);
@@ -55,13 +61,12 @@ describe("the renderer renders the board state", () => {
     selectRepo("/Code/wings-core/.git");
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([featA, featB, solo], 2)) });
 
-    const { container } = render(<App />);
+    render(<App />);
     await screen.findByText("feat-a-change");
 
     // both concurrent worktrees (wings-core selected) show their branch chip
-    const chips = [...container.querySelectorAll(".branch-chip")].map((e) => e.textContent);
-    expect(chips).toContain("feat-a");
-    expect(chips).toContain("feat-b");
+    expect(within(cardFor("feat-a-change")).getByText("feat-a")).toBeInTheDocument();
+    expect(within(cardFor("feat-b-change")).getByText("feat-b")).toBeInTheDocument();
   });
 
   it("shows no branch chip for a lone worktree repository", async () => {
@@ -75,8 +80,7 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("solo-change");
 
-    const soloCard = screen.getByText("solo-change").closest(".change");
-    expect(soloCard?.querySelector(".branch-chip")).toBeNull();
+    expect(within(cardFor("solo-change")).queryByText("feat-solo")).toBeNull();
   });
 
   it("renders each phase's state in the chain", async () => {
@@ -98,9 +102,8 @@ describe("the renderer renders the board state", () => {
     expect(screen.getByText("in progress")).toBeInTheDocument();
     expect(screen.getByText("✓ done")).toBeInTheDocument();
 
-    // the done phase with a file is clickable
-    const grillNode = screen.getByText("grill").closest(".node");
-    expect(grillNode?.className).toContain("clickable");
+    // the done phase with a file is activatable (rendered as a button)
+    expect(screen.getByText("grill").closest("button")).not.toBeNull();
   });
 
   it("makes an in-progress phase clickable when its artifact is on disk and opens it", async () => {
@@ -125,8 +128,7 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("inprogress-openable");
 
-    const proposalNode = screen.getByText("proposal").closest(".node");
-    expect(proposalNode?.className).toContain("clickable");
+    expect(screen.getByText("proposal").closest("button")).not.toBeNull();
 
     await user.click(screen.getByText("proposal"));
     expect(api.readFile).toHaveBeenCalledWith("/repo/x/proposal.md");
@@ -148,8 +150,7 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("inprogress-empty");
 
-    const proposalNode = screen.getByText("proposal").closest(".node");
-    expect(proposalNode?.className).not.toContain("clickable");
+    expect(screen.getByText("proposal").closest("button")).toBeNull();
   });
 
   it("shows apply progress on the apply node without a redundant progress bar", async () => {
@@ -161,14 +162,13 @@ describe("the renderer renders the board state", () => {
     });
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
 
-    const { container } = render(<App />);
+    render(<App />);
     await screen.findByText("tasks-apply");
 
     // the apply node still carries the x/y count
     expect(screen.getByText("2/4")).toBeInTheDocument();
     // but the redundant horizontal progress bar is gone
-    expect(container.querySelector(".apply")).toBeNull();
-    expect(container.querySelector(".bar")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.queryByText("apply progress")).toBeNull();
   });
 
@@ -181,13 +181,13 @@ describe("the renderer renders the board state", () => {
     });
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
 
-    const { container } = render(<App />);
+    render(<App />);
     await screen.findByText("commits-apply");
 
     // the apply node carries the commit count
     expect(screen.getByText("5 commit(s)")).toBeInTheDocument();
     // no bar and no "tasks.md not ticked" footer any more
-    expect(container.querySelector(".apply")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.queryByText(/tasks\.md not ticked/)).toBeNull();
   });
 
@@ -199,9 +199,8 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("finder-change");
 
-    const card = screen.getByText("finder-change").closest(".change") as HTMLElement;
-    const btn = within(card).getByRole("button", { name: /view in finder/i });
-    btn.click();
+    const card = cardFor("finder-change");
+    within(card).getByRole("button", { name: /view in finder/i }).click();
 
     expect(openPath).toHaveBeenCalledWith("/Code/wings-core-a");
   });
@@ -215,7 +214,7 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("finder-fail");
 
-    const card = screen.getByText("finder-fail").closest(".change") as HTMLElement;
+    const card = cardFor("finder-fail");
     within(card).getByRole("button", { name: /view in finder/i }).click();
 
     await waitFor(() =>
@@ -249,7 +248,7 @@ describe("the renderer renders the board state", () => {
     expect(screen.getByText("· no PR")).toBeInTheDocument();
   });
 
-  it("marks the apply node clickable (pointer) whenever it opens an artifact, even while applying", async () => {
+  it("marks the apply node clickable whenever it opens an artifact, even while applying", async () => {
     const c = makeChange({
       change: "apply-clickable",
       planningComplete: true,
@@ -261,8 +260,7 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("apply-clickable");
 
-    const applyNode = screen.getByText("apply").closest(".node");
-    expect(applyNode?.className).toContain("clickable");
+    expect(screen.getByText("apply").closest("button")).not.toBeNull();
   });
 
   it("renders a PR button labelled #<number> next to View in Finder that links to the PR", async () => {
@@ -276,10 +274,9 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("pr-button-change");
 
-    const card = screen.getByText("pr-button-change").closest(".change") as HTMLElement;
+    const card = cardFor("pr-button-change");
     const prBtn = within(card).getByRole("link", { name: /#42/ });
     expect(prBtn).toHaveAttribute("href", "https://github.com/o/r/pull/42");
-    expect(prBtn.className).toContain("pr-btn");
   });
 
   it("shows no PR button on the card when the change has no PR", async () => {
@@ -289,7 +286,7 @@ describe("the renderer renders the board state", () => {
     render(<App />);
     await screen.findByText("no-pr-button");
 
-    const card = screen.getByText("no-pr-button").closest(".change") as HTMLElement;
-    expect(card.querySelector(".pr-btn")).toBeNull();
+    const card = cardFor("no-pr-button");
+    expect(within(card).queryByRole("link", { name: /#\d+/ })).toBeNull();
   });
 });
