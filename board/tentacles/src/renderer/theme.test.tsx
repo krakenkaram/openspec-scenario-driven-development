@@ -3,7 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { theme } from "./theme";
-import { mockApi } from "./test-fixtures";
+import { ChangeCard } from "./board";
+import { renderWithMantine } from "./test-utils";
+import { makeChange, mockApi } from "./test-fixtures";
 
 // Drive prefers-color-scheme: dark true/false; other queries (reduced motion) stay
 // unmatched. Mantine's "auto" scheme reads (prefers-color-scheme: dark).
@@ -74,7 +76,42 @@ describe("brand palette", () => {
 });
 
 describe("reduced motion", () => {
-  it("respects the OS reduced-motion preference", () => {
-    expect(theme.respectReducedMotion).toBe(true);
+  function stubReducedMotion(reduce: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches: /prefers-reduced-motion: reduce/.test(query) ? reduce : false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  const renderCard = () =>
+    renderWithMantine(
+      <ChangeCard
+        c={makeChange({ change: "motion-demo" })}
+        showBranch={false}
+        openArtifacts={() => {}}
+        onArchive={() => {}}
+        busy={false}
+        removing={false}
+      />
+    );
+
+  it("does not animate the change card when the OS requests reduced motion", async () => {
+    stubReducedMotion(true);
+    renderCard();
+    const cardEl = (await screen.findByText("motion-demo")).closest("[data-change-card]") as HTMLElement;
+    await waitFor(() => expect(cardEl.style.transition).toBe(""));
+  });
+
+  it("animates the change card when motion is allowed", async () => {
+    stubReducedMotion(false);
+    renderCard();
+    const cardEl = (await screen.findByText("motion-demo")).closest("[data-change-card]") as HTMLElement;
+    await waitFor(() => expect(cardEl.style.transition).toContain("opacity"));
   });
 });

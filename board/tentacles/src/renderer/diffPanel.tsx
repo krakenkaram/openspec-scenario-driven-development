@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Group, Text } from "@mantine/core";
+import { Button, Group, Modal as MantineModal, Text } from "@mantine/core";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { DiffView } from "./diffView";
 
@@ -17,6 +17,7 @@ const POLL_MS = 3000;
 export function DiffPanel({ repoPath }: { repoPath: string }) {
   const [result, setResult] = useState<DiffResult | null>(null);
   const [staleRefresh, setStaleRefresh] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
   const hasGood = useRef(false);
   const reqGen = useRef(0);
 
@@ -61,32 +62,52 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
     [repoPath]
   );
 
+  const openFileExternally = useCallback(
+    async (rel: string) => {
+      try {
+        const res = await window.electronAPI.openFile(repoPath, rel);
+        if (!res.ok) window.alert("Could not open file: " + res.error);
+      } catch {
+        window.alert("Could not open file.");
+      }
+    },
+    [repoPath]
+  );
+
+  const label = repoPath.split("/").pop();
+
   return (
     <div className="diff-panel">
-      <Group className="diff-panel-head" gap="sm" justify="flex-start">
-        <Text className="diff-panel-title" fw={600}>
-          Branch diff — {repoPath.split("/").pop()}
-        </Text>
-        {staleRefresh && (
-          <Text className="diff-stale" c="orange" size="sm" title="The last refresh failed; showing the previous diff.">
-            couldn't refresh
+      <Group className="diff-panel-head" gap="sm" justify="space-between" wrap="nowrap">
+        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Text className="diff-panel-title" fw={600}>
+            Branch diff — {label}
           </Text>
-        )}
+          {staleRefresh && (
+            <Text className="diff-stale" c="orange" size="sm" title="The last refresh failed; showing the previous diff.">
+              couldn't refresh
+            </Text>
+          )}
+        </Group>
+        <Button variant="default" size="compact-xs" onClick={() => setOverlayOpen(true)}>
+          Open in overlay
+        </Button>
       </Group>
       <div className="diff-body">
-        <DiffView
-          result={result}
-          getFullFile={getFullFile}
-          onOpenFile={async (rel) => {
-            try {
-              const res = await window.electronAPI.openFile(repoPath, rel);
-              if (!res.ok) window.alert("Could not open file: " + res.error);
-            } catch {
-              window.alert("Could not open file.");
-            }
-          }}
-        />
+        <DiffView result={result} getFullFile={getFullFile} onOpenFile={openFileExternally} />
       </div>
+      <MantineModal
+        opened={overlayOpen}
+        onClose={() => setOverlayOpen(false)}
+        title={`Branch diff — ${label}`}
+        fullScreen
+        transitionProps={{ duration: 0 }}
+        closeButtonProps={{ "aria-label": "Close" }}
+      >
+        <div data-diff-overlay style={{ height: "82vh", display: "flex" }}>
+          <DiffView result={result} getFullFile={getFullFile} onOpenFile={openFileExternally} />
+        </div>
+      </MantineModal>
     </div>
   );
 }

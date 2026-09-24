@@ -12,6 +12,7 @@ import {
   Title,
   UnstyledButton,
 } from "@mantine/core";
+import { useReducedMotion } from "@mantine/hooks";
 import type { Change, Phase } from "../shared/ipc-contract";
 
 interface WithOpen {
@@ -169,6 +170,7 @@ export function ChangeCard({
   busy,
   removing,
 }: { c: Change; showBranch: boolean; onArchive: (c: Change) => void; busy: boolean; removing: boolean } & WithOpen) {
+  const reduceMotion = useReducedMotion();
   const statusBadge = c.complete ? (
     <Badge color="teal">COMPLETE</Badge>
   ) : c.review === "pending" ? (
@@ -191,7 +193,7 @@ export function ChangeCard({
       withBorder
       p="md"
       radius="md"
-      style={{ opacity: removing ? 0.4 : 1, transition: "opacity 180ms ease" }}
+      style={{ opacity: removing ? 0.4 : 1, transition: reduceMotion ? undefined : "opacity 180ms ease" }}
     >
       <Group gap="xs" mb="sm" wrap="wrap">
         <Title order={2} size="h4" style={{ margin: 0 }}>

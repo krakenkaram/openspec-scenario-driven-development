@@ -15,15 +15,11 @@ const REFRESH_MS = 15000;
 
 const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
 
-// Mantine owns the colour scheme. The resolved scheme is mirrored onto the
-// documentElement's data-theme so app.css (the diff renderer + markdown, which
-// key their colour variables off html[data-theme]) tracks the toggle.
+// Mantine owns the colour scheme end to end; app.css keys its diff-renderer and
+// markdown colour variables off Mantine's [data-mantine-color-scheme] attribute.
 function ThemeToggle() {
   const { setColorScheme } = useMantineColorScheme();
   const computed = useComputedColorScheme("dark", { getInitialValueInEffect: true });
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", computed);
-  }, [computed]);
   return (
     <ActionIcon
       variant="subtle"

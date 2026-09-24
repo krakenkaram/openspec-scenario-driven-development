@@ -8,9 +8,10 @@ test.describe("auto-refresh", () => {
     await app.page.clock.install();
     await app.page.reload();
     await app.page.waitForLoadState("domcontentloaded");
-    await expect(app.page.getByRole("heading", { name: "add-search" })).toBeVisible();
 
-    const statusText = app.page.locator("header .meta span", { hasText: "updated" });
+    // The header status line ("… updated <time>") is always present once status
+    // loads, regardless of sidebar selection.
+    const statusText = app.page.locator("header").getByText(/updated/);
     await expect(statusText).toBeVisible();
     const before = (await statusText.textContent()) ?? "";
     const statusCalls = () => (app.readStubLog().match(/openspec status/g) || []).length;

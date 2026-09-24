@@ -4,21 +4,17 @@
    highlight.js token palette, and markdown formatting for the artifact viewer.
    All component chrome (board, sidebar, modals, settings, header) is Mantine. */
 
-/* Dark is the default palette. Light applies when either the OS prefers light
-   AND no explicit choice is set, OR the user picks light via the toggle
-   (html[data-theme="light"]). An explicit dark choice (data-theme="dark")
-   always wins, even under a light OS. */
+/* Dark is the default palette. Mantine owns the colour scheme and sets
+   [data-mantine-color-scheme] on the root element; the light overrides apply
+   whenever that resolves to light, whether from the OS default or the toggle.
+   The accent is the Tentacles brand magenta, matching the Mantine theme's
+   primary colour. */
 :root {
   --bg: #0a0e1a; --surface: #121829; --border: #24304d; --fg: #e6edf7;
-  --muted: #8792ad; --accent: #5b8def; --done: #3fb950; --pending: #5a6685; --warn: #e3a008; --blocked: #e5484d;
+  --muted: #8792ad; --accent: #d6197d; --done: #3fb950; --pending: #5a6685; --warn: #e3a008; --blocked: #e5484d;
 }
-html[data-theme="light"] {
-  --bg:#f6f8fa; --surface:#fff; --border:#d0d7de; --fg:#1f2328; --muted:#656d76; --accent:#0969da; --done:#1a7f37; --pending:#8c959f; --warn:#9a6700; --blocked:#cf222e;
-}
-@media (prefers-color-scheme: light) {
-  html:not([data-theme]) {
-    --bg:#f6f8fa; --surface:#fff; --border:#d0d7de; --fg:#1f2328; --muted:#656d76; --accent:#0969da; --done:#1a7f37; --pending:#8c959f; --warn:#9a6700; --blocked:#cf222e;
-  }
+[data-mantine-color-scheme="light"] {
+  --bg:#f6f8fa; --surface:#fff; --border:#d0d7de; --fg:#1f2328; --muted:#656d76; --accent:#c11574; --done:#1a7f37; --pending:#8c959f; --warn:#9a6700; --blocked:#cf222e;
 }
 
 /* Layout frame (header height ~62px). The sidebar/main split and the diff/detail
@@ -77,15 +73,9 @@ html[data-theme="light"] {
   --hl-keyword:#ff7b72; --hl-string:#a5d6ff; --hl-number:#79c0ff; --hl-title:#d2a8ff;
   --hl-comment:#8b949e; --hl-attr:#79c0ff; --hl-type:#ffa657; --hl-built-in:#ffa657; --hl-meta:#8b949e;
 }
-html[data-theme="light"] {
+[data-mantine-color-scheme="light"] {
   --hl-keyword:#cf222e; --hl-string:#0a3069; --hl-number:#0550ae; --hl-title:#8250df;
   --hl-comment:#6e7781; --hl-attr:#0550ae; --hl-type:#953800; --hl-built-in:#953800; --hl-meta:#6e7781;
-}
-@media (prefers-color-scheme: light) {
-  html:not([data-theme]) {
-    --hl-keyword:#cf222e; --hl-string:#0a3069; --hl-number:#0550ae; --hl-title:#8250df;
-    --hl-comment:#6e7781; --hl-attr:#0550ae; --hl-type:#953800; --hl-built-in:#953800; --hl-meta:#6e7781;
-  }
 }
 .diff-text.hljs { color:var(--fg); }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag { color:var(--hl-keyword); }

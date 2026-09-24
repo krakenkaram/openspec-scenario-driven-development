@@ -90,3 +90,14 @@ export const test = base.extend<{ app: HermeticApp }>({
 });
 
 export { expect };
+
+// Select a repository in the sidebar so the main panel renders its change cards.
+// The board is selection-driven: nothing shows in the main panel until a
+// repository (or worktree) is chosen. Clicking the repo row both selects and
+// expands it.
+export async function selectRepo(app: HermeticApp, name: string): Promise<void> {
+  await app.page
+    .locator("[data-repo]", { has: app.page.locator("[data-repo-name]", { hasText: name }) })
+    .locator("[data-repo-row]")
+    .click();
+}

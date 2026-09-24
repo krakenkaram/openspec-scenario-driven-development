@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { makeChange, makeStatus, mockApi, selectRepo } from "./test-fixtures";
@@ -46,10 +46,38 @@ describe("selecting a worktree opens its live branch diff inline", () => {
     await user.click(await screen.findByTitle(LEAF));
 
     expect(api.getDiff).toHaveBeenCalledWith("/Code/repo-a");
-    // rendered inline in the main panel, with no modal overlay
+    // rendered inline in the main panel, with no diff overlay open
     await waitFor(() => expect(document.querySelector(".diff-panel")).not.toBeNull());
-    expect(document.querySelector(".diff-overlay")).toBeNull();
+    expect(document.querySelector("[data-diff-overlay]")).toBeNull();
     expect(await screen.findByText("new")).toBeTruthy();
+  });
+});
+
+describe("the branch diff opens in an on-demand overlay", () => {
+  it("opens the same diff in a dismissible overlay", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(diffModel),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByText("new"); // inline diff present
+    expect(document.querySelector("[data-diff-overlay]")).toBeNull(); // overlay closed by default
+
+    await user.click(screen.getByRole("button", { name: /open in overlay/i }));
+    const overlay = await waitFor(() => {
+      const el = document.querySelector("[data-diff-overlay]");
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    // the overlay renders the same diff content
+    expect(within(overlay).getByText("new")).toBeTruthy();
+
+    // and it can be dismissed
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(document.querySelector("[data-diff-overlay]")).toBeNull());
   });
 });
 
