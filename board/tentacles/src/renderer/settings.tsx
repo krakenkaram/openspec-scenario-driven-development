@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Badge, Button, Checkbox, Group, Modal, Radio, Stack, Tabs, Text, TextInput } from "@mantine/core";
 import type { NotificationSetting, ResultRow, SchemaInfo, Target } from "../shared/ipc-contract";
 
 const NOTIFICATION_OPTIONS: Array<{ value: NotificationSetting; label: string }> = [
@@ -55,18 +56,24 @@ function affectedTargets(rows: ResultRow[], ranTargets: Target[]): Target[] {
 
 function ResultList({ title, rows }: { title: string; rows: ResultRow[] }) {
   return (
-    <div className="setup-results">
-      <div className="setup-results-title">{title}</div>
-      <ul>
-        {rows.map((r) => (
-          <li key={r.id} className={r.ok ? "row-ok" : "row-fail"}>
-            <span className="row-icon">{r.ok ? "✅" : "❌"}</span>
-            <span className="row-label">{r.label}</span>
-            {!r.ok && r.reason && <span className="row-reason">{r.reason}</span>}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Stack gap={4} mt="sm">
+      <Text fw={600} size="sm">
+        {title}
+      </Text>
+      {rows.map((r) => (
+        <Group key={r.id} gap="xs" wrap="nowrap" align="flex-start">
+          <Text component="span">{r.ok ? "✅" : "❌"}</Text>
+          <Text component="span" size="sm">
+            {r.label}
+          </Text>
+          {!r.ok && r.reason && (
+            <Text component="span" size="sm" c="dimmed">
+              {r.reason}
+            </Text>
+          )}
+        </Group>
+      ))}
+    </Stack>
   );
 }
 
@@ -116,14 +123,6 @@ export function SettingsPanel({
       }
     })();
   }, [open]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const toggleTarget = (id: Target) => {
     setTargets((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
@@ -199,180 +198,155 @@ export function SettingsPanel({
     }
   };
 
-  if (!open) return null;
-
   const doctorHasFailure = !!doctorResult && doctorResult.some((c) => !c.ok);
   const repairTargets = doctorResult ? affectedTargets(doctorResult, doctorTargets) : [];
 
   return (
-    <div
-      className={`overlay open`}
-      onClick={(e) => {
-        if ((e.target as HTMLElement).classList.contains("overlay")) onClose();
-      }}
+    <Modal
+      opened={open}
+      onClose={onClose}
+      title="Settings"
+      size="lg"
+      transitionProps={{ duration: 0 }}
+      closeButtonProps={{ "aria-label": "Close" }}
     >
-      <div className="modal settings-modal">
-        <div className="modal-head">
-          <span className="modal-title">Settings</span>
-          <button className="modal-x" onClick={onClose}>
-            ×
-          </button>
-        </div>
+      <Tabs value={tab} onChange={(v) => setTab((v as Tab) ?? "general")}>
+        <Tabs.List mb="md">
+          <Tabs.Tab value="general">General</Tabs.Tab>
+          <Tabs.Tab value="setup">Setup</Tabs.Tab>
+          <Tabs.Tab value="schemas">Schemas</Tabs.Tab>
+        </Tabs.List>
 
-        <div className="settings-tabs" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === "general"}
-            className={`settings-tab ${tab === "general" ? "active" : ""}`}
-            onClick={() => setTab("general")}
-          >
-            General
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "setup"}
-            className={`settings-tab ${tab === "setup" ? "active" : ""}`}
-            onClick={() => setTab("setup")}
-          >
-            Setup
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "schemas"}
-            className={`settings-tab ${tab === "schemas" ? "active" : ""}`}
-            onClick={() => setTab("schemas")}
-          >
-            Schemas
-          </button>
-        </div>
+        <Tabs.Panel value="general">
+          <Stack gap="md">
+            <Group align="flex-end" gap="sm">
+              <TextInput
+                id="settings-root"
+                label="Scan root directory"
+                value={root}
+                placeholder="~/Code"
+                spellCheck={false}
+                onChange={(e) => setRoot(e.currentTarget.value)}
+                style={{ flex: 1 }}
+              />
+              <Button variant="default" type="button" onClick={() => void browse()}>
+                Browse…
+              </Button>
+            </Group>
 
-        <div className="settings-body">
-          {tab === "general" && (
-            <>
-              <label className="settings-label" htmlFor="settings-root">
-                Scan root directory
-              </label>
-              <div className="settings-input-row">
-                <input
-                  id="settings-root"
-                  className="settings-input"
-                  type="text"
-                  value={root}
-                  placeholder="~/Code"
-                  spellCheck={false}
-                  onChange={(e) => setRoot(e.target.value)}
-                />
-                <button className="settings-browse" type="button" onClick={() => void browse()}>
-                  Browse…
-                </button>
-              </div>
-
-              <span className="settings-label">Notifications</span>
-              <div className="settings-radios" role="radiogroup" aria-label="Notifications">
+            <Radio.Group
+              value={notifications}
+              onChange={(v) => setNotifications(v as NotificationSetting)}
+              label="Notifications"
+            >
+              <Stack gap="xs" mt="xs">
                 {NOTIFICATION_OPTIONS.map((opt) => (
-                  <label key={opt.value} className="settings-radio">
-                    <input
-                      type="radio"
-                      name="notifications"
-                      value={opt.value}
-                      checked={notifications === opt.value}
-                      onChange={() => setNotifications(opt.value)}
-                    />
-                    {opt.label}
-                  </label>
+                  <Radio key={opt.value} value={opt.value} label={opt.label} />
                 ))}
-              </div>
-            </>
-          )}
+              </Stack>
+            </Radio.Group>
+          </Stack>
+        </Tabs.Panel>
 
-          {tab === "setup" && (
-            <div className="setup-panel">
-              <div className="settings-label">Configure this machine for</div>
-              <div className="setup-targets">
-                {TARGET_LABELS.map(({ id, label }) => (
-                  <label key={id} className="setup-target">
-                    <input
-                      type="checkbox"
-                      aria-label={label}
-                      checked={targets.includes(id)}
-                      onChange={() => toggleTarget(id)}
-                    />
-                    {label}
-                  </label>
+        <Tabs.Panel value="setup">
+          <Stack gap="md">
+            <Text fw={600} size="sm">
+              Configure this machine for
+            </Text>
+            <Group>
+              {TARGET_LABELS.map(({ id, label }) => (
+                <Checkbox
+                  key={id}
+                  label={label}
+                  checked={targets.includes(id)}
+                  onChange={() => toggleTarget(id)}
+                />
+              ))}
+            </Group>
+            <Group>
+              <Button onClick={() => void runInstall()} disabled={busy || targets.length === 0}>
+                Install
+              </Button>
+              <Button variant="default" onClick={() => void runDoctor()} disabled={busy || targets.length === 0}>
+                Run doctor
+              </Button>
+            </Group>
+            {installResult && <ResultList title="Install" rows={installResult} />}
+            {doctorResult && <ResultList title="Doctor" rows={doctorResult} />}
+            {doctorHasFailure && (
+              <Button color="orange" onClick={() => void runInstall(repairTargets)} disabled={busy}>
+                Fix detected issues
+              </Button>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="schemas">
+          <Stack gap="sm">
+            <Text fw={600} size="sm">
+              Available schemas
+            </Text>
+            {schemas.length === 0 ? (
+              <Text c="dimmed">No schemas available.</Text>
+            ) : (
+              <Stack gap="sm">
+                {schemas.map((s) => (
+                  <Stack key={s.name} gap={4} p="sm" style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: 8 }}>
+                    <Group gap="xs">
+                      <Text fw={600}>{s.name}</Text>
+                      <Badge variant="light" color={s.scope === "global" ? "blue" : "gray"}>
+                        {s.scope === "global" ? "Global" : "Local"}
+                      </Badge>
+                      <span style={{ flex: 1 }} />
+                      {s.action === "install" && (
+                        <Button
+                          type="button"
+                          size="compact-sm"
+                          disabled={schemaBusy === s.name}
+                          onClick={() => void applySchemaAction("install", s.name)}
+                        >
+                          {schemaBusy === s.name ? "Installing…" : "Install"}
+                        </Button>
+                      )}
+                      {s.action === "uninstall" && (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="compact-sm"
+                          disabled={schemaBusy === s.name}
+                          onClick={() => void applySchemaAction("uninstall", s.name)}
+                        >
+                          {schemaBusy === s.name ? "Uninstalling…" : "Uninstall"}
+                        </Button>
+                      )}
+                    </Group>
+                    {s.path && (
+                      <Text size="xs" c="dimmed">
+                        {s.path}
+                      </Text>
+                    )}
+                    {s.description && <Text size="sm">{s.description}</Text>}
+                    <Text size="xs" c="dimmed">
+                      {s.artifacts.join(" → ")}
+                    </Text>
+                  </Stack>
                 ))}
-              </div>
-              <div className="setup-actions">
-                <button className="setup-install" onClick={() => void runInstall()} disabled={busy || targets.length === 0}>
-                  Install
-                </button>
-                <button className="setup-doctor" onClick={() => void runDoctor()} disabled={busy || targets.length === 0}>
-                  Run doctor
-                </button>
-              </div>
-              {installResult && <ResultList title="Install" rows={installResult} />}
-              {doctorResult && <ResultList title="Doctor" rows={doctorResult} />}
-              {doctorHasFailure && (
-                <button className="setup-repair" onClick={() => void runInstall(repairTargets)} disabled={busy}>
-                  Fix detected issues
-                </button>
-              )}
-            </div>
-          )}
+              </Stack>
+            )}
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
 
-          {tab === "schemas" && (
-            <div className="schemas-panel">
-              <div className="settings-label">Available schemas</div>
-              {schemas.length === 0 ? (
-                <div className="schemas-empty">No schemas available.</div>
-              ) : (
-                <ul className="schema-list">
-                  {schemas.map((s) => (
-                    <li key={s.name} className="schema-item">
-                      <div className="schema-head">
-                        <span className="schema-name">{s.name}</span>
-                        <span className={`schema-pill schema-pill-${s.scope}`}>
-                          {s.scope === "global" ? "Global" : "Local"}
-                        </span>
-                        <span className="schema-head-spacer" />
-                        {s.action === "install" && (
-                          <button
-                            type="button"
-                            className="schema-action schema-install"
-                            disabled={schemaBusy === s.name}
-                            onClick={() => void applySchemaAction("install", s.name)}
-                          >
-                            {schemaBusy === s.name ? "Installing…" : "Install"}
-                          </button>
-                        )}
-                        {s.action === "uninstall" && (
-                          <button
-                            type="button"
-                            className="schema-action schema-uninstall"
-                            disabled={schemaBusy === s.name}
-                            onClick={() => void applySchemaAction("uninstall", s.name)}
-                          >
-                            {schemaBusy === s.name ? "Uninstalling…" : "Uninstall"}
-                          </button>
-                        )}
-                      </div>
-                      {s.path && <div className="schema-path">{s.path}</div>}
-                      {s.description && <div className="schema-desc">{s.description}</div>}
-                      <div className="schema-steps">{s.artifacts.join(" → ")}</div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {error && <div className="settings-error">{error}</div>}
-          <div className="settings-actions">
-            <button className="settings-save" onClick={() => void save()} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      {error && (
+        <Text c="red" mt="sm">
+          {error}
+        </Text>
+      )}
+      <Group justify="flex-end" mt="md">
+        <Button onClick={() => void save()} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </Group>
+    </Modal>
   );
 }
