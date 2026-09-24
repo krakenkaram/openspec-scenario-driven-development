@@ -63,6 +63,26 @@ A non-interactive, one-shot, or autonomous Grill — where the agent answers its
 
 Either way, `./scripts/setup-kiro-crew.sh` does both; have the user run `kirocrew restart` if routing changed, then resume the workflow in a session started after the restart. Never degrade to a non-interactive Grill because setup was incomplete.
 
+## Step 0 — Start on a fresh worktree
+
+Every new change starts on its own git worktree cut from the default branch, unless the user explicitly says to use the current branch or checkout. This keeps each change isolated on its own branch instead of piling unrelated edits onto whatever was already checked out.
+
+```bash
+git worktree add -b <branch-name> <path/to/worktree> <default-branch>
+```
+
+Then point the host's git diff view at the new worktree before editing, so changes render as diffs:
+
+- **Kiro Crew** — call the `set_project` tool with the worktree's absolute path. This is refused for headless callers (crons, spawned subagents), so create the worktree and retarget in the session whose diff view you want scoped.
+
+```
+set_project(path="/absolute/path/to/worktree")
+```
+
+- **Kiro CLI / Claude Code** — open or `cd` into the worktree; the diff view already follows the working directory.
+
+Only skip the worktree when the user tells you to work on the current branch or checkout.
+
 ## Step 1 — Start a change
 
 Create the change with `--schema atdd-driven`. The flag is mandatory on this step and unnecessary afterward because OpenSpec stores it with the change.
@@ -137,6 +157,7 @@ After every scenario is complete, validation is green, independent review approv
 
 ## Non-negotiables
 
+- Start every new change on a fresh worktree cut from the default branch, unless the user says to use the current branch.
 - Always create changes with `--schema atdd-driven`.
 - Load this skill before phase work or implementation.
 - One artifact per Continue invocation.
