@@ -202,3 +202,28 @@ describe("PLAN — the session is ephemeral but survives phase switches", () => 
     expect(await screen.findByText("late question")).toBeInTheDocument();
   });
 });
+
+describe("PLAN — failures surface in the chat with no up-front gate", () => {
+  it("keeps the folder picker reachable even before any session (no up-front gate)", async () => {
+    mockApi();
+    render(<App />);
+    const user = userEvent.setup();
+    await gotoPlan(user);
+    expect(screen.getByRole("button", { name: /choose folder/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("chat-turn")).not.toBeInTheDocument();
+  });
+
+  it("renders an agent error turn distinctly in the chat", async () => {
+    const chan = planTurnChannel();
+    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    act(() => chan.emit({ speaker: "error", text: "the agent crashed" }));
+
+    const errorTurn = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
+    expect(errorTurn).toBeTruthy();
+    expect(within(errorTurn).getByText("the agent crashed")).toBeInTheDocument();
+  });
+});

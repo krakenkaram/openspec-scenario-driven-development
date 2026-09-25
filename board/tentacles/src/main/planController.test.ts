@@ -113,3 +113,19 @@ describe("PlanController — new refinement wipes only the ticket", () => {
     expect(res).toEqual({ ok: true });
   });
 });
+
+describe("PlanController — failures surface without retry", () => {
+  it("surfaces a start failure as an error turn and does not retry", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "plan-fail-"));
+    const runner = makeFakeAgentRunner({ failOnStart: "kiro CLI not found" });
+    const pushed: { speaker: string; text: string }[] = [];
+    const controller = makePlanController(runner, (t) => pushed.push(t));
+
+    const res = await controller.startSession({ folderPath: folder, idea: "x" });
+
+    expect(res).toEqual({ ok: true });
+    expect(pushed).toContainEqual({ speaker: "error", text: "kiro CLI not found" });
+    // Exactly one start — no automatic retry.
+    expect(runner.sessions).toHaveLength(1);
+  });
+});
