@@ -51,4 +51,21 @@ export const theme = createTheme({
   respectReducedMotion: true,
   defaultRadius: "md",
   colors: { magenta, purple, dark: navy },
+  fontSizes: {
+    xs: "0.6875rem",
+    sm: "0.75rem",
+    md: "0.8125rem",
+    lg: "0.9375rem",
+    xl: "1.0625rem",
+  },
+  headings: {
+    sizes: {
+      h1: { fontSize: "1.375rem" },
+      h2: { fontSize: "1.125rem" },
+      h3: { fontSize: "1rem" },
+      h4: { fontSize: "0.875rem" },
+      h5: { fontSize: "0.8125rem" },
+      h6: { fontSize: "0.75rem" },
+    },
+  },
 });

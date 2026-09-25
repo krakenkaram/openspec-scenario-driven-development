@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Button, Text } from "@mantine/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, Center, Loader, Text, TextInput } from "@mantine/core";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { highlightLine, languageForPath } from "./highlight";
 
@@ -73,13 +73,21 @@ function baseName(path: string): string {
 function DirLevel({
   node,
   depth,
-  sel,
+  parentPath,
+  collapsed,
+  onToggleDir,
+  filtering,
+  selectedPath,
   onSelect,
 }: {
   node: DirNode;
   depth: number;
-  sel: number;
-  onSelect: (index: number) => void;
+  parentPath: string;
+  collapsed: Set<string>;
+  onToggleDir: (path: string) => void;
+  filtering: boolean;
+  selectedPath: string | undefined;
+  onSelect: (path: string) => void;
 }) {
   const dirs = [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b));
   const files = [...node.files].sort((a, b) => baseName(a.file.path).localeCompare(baseName(b.file.path)));
@@ -95,24 +103,46 @@ function DirLevel({
           label += "/" + childName;
           current = grandChild;
         }
+        const dirPath = parentPath ? `${parentPath}/${label}` : label;
+        const isCollapsed = !filtering && collapsed.has(dirPath);
         return (
           <div className="diff-tree-branch" key={`d\u0000${label}`}>
-            <div className="diff-tree-dir" style={{ paddingLeft: depth * 12 + 8 }} title={label}>
-              {label}/
-            </div>
-            <DirLevel node={current} depth={depth + 1} sel={sel} onSelect={onSelect} />
+            <button
+              type="button"
+              className="diff-tree-dir-row"
+              style={{ paddingLeft: depth * 12 + 8 }}
+              aria-expanded={!isCollapsed}
+              onClick={() => onToggleDir(dirPath)}
+            >
+              <span className="diff-tree-caret" aria-hidden>{isCollapsed ? "\u25B8" : "\u25BE"}</span>
+              <span className="diff-tree-dir" title={label}>{label}/</span>
+            </button>
+            {!isCollapsed && (
+              <DirLevel
+                node={current}
+                depth={depth + 1}
+                parentPath={dirPath}
+                collapsed={collapsed}
+                onToggleDir={onToggleDir}
+                filtering={filtering}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+              />
+            )}
           </div>
         );
       })}
       {files.map(({ file, index }) => (
         <button
           key={`${file.path}\u0000${index}`}
-          className={`diff-file-item ${index === sel ? "active" : ""}`}
+          className={`diff-file-item ${file.path === selectedPath ? "active" : ""}`}
           style={{ paddingLeft: depth * 12 + 8 }}
-          onClick={() => onSelect(index)}
+          onClick={() => onSelect(file.path)}
           title={file.path}
         >
-          <span className={`diff-status ${file.status}`}>{file.status}</span>
+          <span className={`diff-status diff-status-abbr ${file.status}`} title={file.status}>
+            {file.status.charAt(0)}
+          </span>
           <span className="diff-file-name">{baseName(file.path)}</span>
         </button>
       ))}
@@ -135,11 +165,21 @@ export function DiffView({
   getFullFile: (filePath: string) => Promise<DiffFile | null>;
   onOpenFile?: (filePath: string) => void;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [fullByPath, setFullByPath] = useState<Record<string, DiffFile>>({});
   const [treeWidth, setTreeWidth] = useState(240);
+  const [filter, setFilter] = useState("");
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const layoutRef = useRef<HTMLDivElement>(null);
+
+  const toggleDir = (path: string) =>
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
 
   // Drag the handle between the file tree and the diff pane to resize the tree.
   // Bounds: min 160px (never collapse) and max ~60% of the panel (never squeeze
@@ -193,8 +233,21 @@ export function DiffView({
   }, [result]);
 
   const files = result && result.ok ? result.files : [];
-  const sel = files.length ? Math.min(selected, files.length - 1) : 0;
-  const current = files[sel];
+  const query = filter.trim().toLowerCase();
+  const filteredFiles = query ? files.filter((f) => f.path.toLowerCase().includes(query)) : files;
+  // Electron structured-clones each IPC response, so `files` is a new array every
+  // 3s poll. Key the memo on the tree-relevant data (ordered path+status) instead,
+  // so the tree only rebuilds when the file set, a status, or the filter actually
+  // changes — not on every poll. The expanded-file refresh effect above still
+  // keys on `result`.
+  const treeKey = filteredFiles.map((f) => `${f.path}\u0000${f.status}`).join("\u0001");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tree = useMemo(() => buildTree(filteredFiles), [treeKey]);
+  // Selection is keyed by path, not array index, so a live poll that adds or
+  // removes OTHER files never shifts which file is shown — the open file stays
+  // open until it is itself removed (then it falls back to the first file).
+  const current = files.find((f) => f.path === selectedPath) ?? files[0];
+  const currentPath = current?.path;
 
   const toggleExpand = async (path: string) => {
     if (expanded.has(path)) {
@@ -213,7 +266,11 @@ export function DiffView({
   };
 
   if (result === null) {
-    return <Text className="diff-empty" c="dimmed" p="md">Loading…</Text>;
+    return (
+      <Center className="diff-empty" style={{ flex: 1 }} p="md">
+        <Loader color="magenta" aria-label="Loading diff" />
+      </Center>
+    );
   }
   if (!result.ok) {
     return <Text className="diff-empty" c="red" p="md">Could not load diff: {result.error}</Text>;
@@ -227,7 +284,27 @@ export function DiffView({
   return (
     <div className="diff-layout" ref={layoutRef}>
       <nav className="diff-sidebar" style={{ width: treeWidth, flex: "0 0 auto" }}>
-        <DirLevel node={buildTree(files)} depth={0} sel={sel} onSelect={setSelected} />
+        <TextInput
+          className="diff-file-search"
+          size="xs"
+          placeholder="Search files…"
+          aria-label="Search files"
+          value={filter}
+          onChange={(e) => setFilter(e.currentTarget.value)}
+          leftSection={<span aria-hidden>🔍</span>}
+        />
+        <div className="diff-tree-scroll">
+          <DirLevel
+            node={tree}
+            depth={0}
+            parentPath=""
+            collapsed={collapsedDirs}
+            onToggleDir={toggleDir}
+            filtering={query.length > 0}
+            selectedPath={currentPath}
+            onSelect={setSelectedPath}
+          />
+        </div>
       </nav>
       <div
         className="diff-resize"
@@ -253,7 +330,7 @@ export function DiffView({
             ) : (
               <span className="diff-path">{current.path}</span>
             )}
-            <Button className="diff-expand" variant="default" size="compact-xs" onClick={() => void toggleExpand(current.path)}>
+            <Button className="diff-expand" variant="default" size="compact-xs" style={{ marginLeft: "auto", flex: "0 0 auto" }} onClick={() => void toggleExpand(current.path)}>
               {isExpanded ? "Collapse" : "Expand full file"}
             </Button>
           </div>

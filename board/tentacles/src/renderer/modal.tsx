@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Modal as MantineModal, Tabs } from "@mantine/core";
+import { Modal as MantineModal, Tabs, Text, UnstyledButton } from "@mantine/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -25,11 +25,13 @@ export function Modal({
   title,
   sections,
   onClose,
+  onOpenInEditor,
 }: {
   open: boolean;
   title: string;
   sections: ModalSection[];
   onClose: () => void;
+  onOpenInEditor?: () => void;
 }) {
   const [active, setActive] = useState(0);
 
@@ -40,11 +42,21 @@ export function Modal({
   const multi = sections.length > 1;
   const current = sections[Math.min(active, Math.max(sections.length - 1, 0))];
 
+  const titleNode = onOpenInEditor ? (
+    <UnstyledButton onClick={onOpenInEditor} title="Open in your editor" style={{ cursor: "pointer" }}>
+      <Text component="span" c="magenta" style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>
+        {title} ↗
+      </Text>
+    </UnstyledButton>
+  ) : (
+    title
+  );
+
   return (
     <MantineModal
       opened={open}
       onClose={onClose}
-      title={title}
+      title={titleNode}
       size="xl"
       transitionProps={{ duration: 0 }}
       closeButtonProps={{ "aria-label": "Close" }}

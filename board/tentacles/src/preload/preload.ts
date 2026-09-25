@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ChannelMap, ElectronAPI, EventChannelMap } from "../shared/ipc-contract";
+import type { AppNotification, ChannelMap, ElectronAPI, EventChannelMap } from "../shared/ipc-contract";
 
-// Exactly twenty-three named channels — no generic command passthrough. A sandboxed
+// Exactly twenty-four named channels — no generic command passthrough. A sandboxed
 // preload cannot import wiring.ts at runtime, so the channel strings are
 // declared here; typing the map as the shared ChannelMap asserts each method is
 // bound to its exact channel (a typo, missing key, or swap fails to compile).
@@ -13,6 +13,7 @@ const CHANNELS: ChannelMap = {
   archive: "board:archive",
   archivePlan: "board:archivePlan",
   archiveExecute: "board:archiveExecute",
+  removeWorktree: "board:removeWorktree",
   getSettings: "board:getSettings",
   setSettings: "board:setSettings",
   chooseDirectory: "board:chooseDirectory",
@@ -35,6 +36,7 @@ const CHANNELS: ChannelMap = {
 // the same compile-time agreement as the invoke channels above.
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
+  notification: "board:notification",
   planTurn: "board:planTurn",
   planStream: "board:planStream",
   planBusy: "board:planBusy",
@@ -49,6 +51,7 @@ const api: ElectronAPI = {
   archive: (payload) => ipcRenderer.invoke(CHANNELS.archive, payload),
   archivePlan: (payload) => ipcRenderer.invoke(CHANNELS.archivePlan, payload),
   archiveExecute: (payload) => ipcRenderer.invoke(CHANNELS.archiveExecute, payload),
+  removeWorktree: (payload) => ipcRenderer.invoke(CHANNELS.removeWorktree, payload),
   getSettings: () => ipcRenderer.invoke(CHANNELS.getSettings),
   setSettings: (payload) => ipcRenderer.invoke(CHANNELS.setSettings, payload),
   chooseDirectory: () => ipcRenderer.invoke(CHANNELS.chooseDirectory),
@@ -58,6 +61,11 @@ const api: ElectronAPI = {
     const listener = () => handler();
     ipcRenderer.on(EVENTS.notificationSound, listener);
     return () => ipcRenderer.removeListener(EVENTS.notificationSound, listener);
+  },
+  onNotification: (handler) => {
+    const listener = (_e: unknown, n: AppNotification) => handler(n);
+    ipcRenderer.on(EVENTS.notification, listener);
+    return () => ipcRenderer.removeListener(EVENTS.notification, listener);
   },
   install: (payload) => ipcRenderer.invoke(CHANNELS.install, payload),
   doctor: (payload) => ipcRenderer.invoke(CHANNELS.doctor, payload),

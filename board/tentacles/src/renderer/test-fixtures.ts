@@ -58,12 +58,14 @@ export type MockApi = {
   archive: ReturnType<typeof vi.fn>;
   archivePlan: ReturnType<typeof vi.fn>;
   archiveExecute: ReturnType<typeof vi.fn>;
+  removeWorktree: ReturnType<typeof vi.fn>;
   getSettings: ReturnType<typeof vi.fn>;
   setSettings: ReturnType<typeof vi.fn>;
   chooseDirectory: ReturnType<typeof vi.fn>;
   openPath: ReturnType<typeof vi.fn>;
   openFile: ReturnType<typeof vi.fn>;
   onNotificationSound: ReturnType<typeof vi.fn>;
+  onNotification: ReturnType<typeof vi.fn>;
   install: ReturnType<typeof vi.fn>;
   doctor: ReturnType<typeof vi.fn>;
   listSchemas: ReturnType<typeof vi.fn>;
@@ -99,12 +101,14 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
       warnings: [],
     }),
     archiveExecute: vi.fn().mockResolvedValue({ archived: true, worktreeRemoved: null, branchDeleted: null }),
+    removeWorktree: vi.fn().mockResolvedValue({ ok: true }),
     getSettings: vi.fn().mockResolvedValue({ root: "/Code", notifications: "enabled", targets: [] }),
     setSettings: vi.fn().mockResolvedValue({ ok: true, root: "/Code", notifications: "enabled", targets: [] }),
     chooseDirectory: vi.fn().mockResolvedValue({ path: null }),
     openPath: vi.fn().mockResolvedValue({ ok: true }),
     openFile: vi.fn().mockResolvedValue({ ok: true }),
     onNotificationSound: vi.fn().mockReturnValue(() => {}),
+    onNotification: vi.fn().mockReturnValue(() => {}),
     install: vi.fn().mockResolvedValue({ steps: [] }),
     doctor: vi.fn().mockResolvedValue({ checks: [] }),
     listSchemas: vi.fn().mockResolvedValue([]),
