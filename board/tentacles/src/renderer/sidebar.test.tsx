@@ -60,7 +60,7 @@ describe("layout: top bar stays, sidebar is chrome-free, nothing selected shows 
     // top bar controls
     expect(screen.getByText("Tentacles")).toBeInTheDocument();
     expect(screen.getByTitle("Settings")).toBeInTheDocument();
-    expect(screen.getByTitle("Toggle dark / light")).toBeInTheDocument();
+    expect(screen.queryByTitle("Toggle dark / light")).toBeNull();
     expect(screen.getByText(/change\(s\) ·/)).toBeInTheDocument();
 
     // sidebar carries no title / settings / status strip of its own
@@ -331,5 +331,58 @@ describe("the sidebar width is draggable within bounds", () => {
     drag(0, 1000);
     // 40% of 1000 = 400, which is under the 480 ceiling, so the width clamps at 400.
     expect(parseInt(sidebar.style.width, 10)).toBe(400);
+  });
+});
+
+
+describe("worktree delete (bin) button", () => {
+  it("deletes the worktree folder for the clicked leaf after confirmation", async () => {
+    const removeWorktree = vi.fn().mockResolvedValue({ ok: true });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)), removeWorktree });
+    const user = userEvent.setup();
+    render(<App />);
+    const wc = (await screen.findByText("wings-core")).closest("[data-repo]") as HTMLElement;
+    await user.click(within(wc).getByRole("button", { name: /expand repository/i }));
+
+    await user.click(within(wc).getByRole("button", { name: /worktree actions for feat-a/i }));
+    await user.click(await screen.findByRole("menuitem", { name: /delete worktree/i }));
+
+    await screen.findByText("Delete this worktree folder?");
+    await user.click(screen.getByRole("button", { name: "Delete folder" }));
+
+    await waitFor(() => expect(removeWorktree).toHaveBeenCalledWith({ repoPath: "/Code/wc-a" }));
+  });
+
+  it("does not delete when the confirmation is cancelled", async () => {
+    const removeWorktree = vi.fn().mockResolvedValue({ ok: true });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)), removeWorktree });
+    const user = userEvent.setup();
+    render(<App />);
+    const wc = (await screen.findByText("wings-core")).closest("[data-repo]") as HTMLElement;
+    await user.click(within(wc).getByRole("button", { name: /expand repository/i }));
+
+    await user.click(within(wc).getByRole("button", { name: /worktree actions for feat-a/i }));
+    await user.click(await screen.findByRole("menuitem", { name: /delete worktree/i }));
+    await screen.findByText("Delete this worktree folder?");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(removeWorktree).not.toHaveBeenCalled();
+  });
+});
+
+describe("the sidebar repository search", () => {
+  it("accepts typed text and filters the repository list", async () => {
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("wings-core");
+    expect(screen.getByText("lonely")).toBeTruthy();
+
+    const sidebarSearch = screen.getByLabelText("Search repositories") as HTMLInputElement;
+    await user.type(sidebarSearch, "wings");
+    expect(sidebarSearch.value).toBe("wings");
+
+    expect(screen.getByText("wings-core")).toBeTruthy();
+    expect(screen.queryByText("lonely")).toBeNull();
   });
 });

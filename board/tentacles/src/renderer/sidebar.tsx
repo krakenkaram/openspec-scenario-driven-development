@@ -1,4 +1,5 @@
-import { Badge, Box, Group, Loader, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
+import { ActionIcon, Badge, Box, Group, Loader, Paper, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
 import type { RepositoryGroup } from "../shared/ipc-contract";
 import { worktreeLeaves, worktreeStatus, worktreeDirName, type WorktreeLeaf } from "./worktrees";
 
@@ -51,43 +52,116 @@ function SidebarLeaf({
   leaf,
   selected,
   onSelect,
+  onDelete,
 }: {
   leaf: WorktreeLeaf;
   selected: boolean;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const completed = worktreeStatus(leaf.changes) === "completed";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (menuOpen) itemRef.current?.focus();
+  }, [menuOpen]);
+  const closeMenu = () => {
+    setMenuOpen(false);
+    triggerRef.current?.focus();
+  };
   return (
-    <UnstyledButton
-      data-worktree-leaf
-      data-branch={leaf.branch ?? "(detached)"}
-      data-completed={completed || undefined}
-      aria-current={selected || undefined}
-      onClick={onSelect}
-      title={leaf.repoPath}
-      p="xs"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        borderRadius: 6,
-        opacity: completed ? 0.6 : 1,
-        backgroundColor: selected ? "var(--mantine-color-grape-light)" : undefined,
-      }}
-    >
-      <StatusIndicator changes={leaf.changes} />
-      <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
-        <Text size="sm" truncate>
-          {leaf.branch ?? "(detached)"}
-        </Text>
-        <Text size="xs" c="dimmed" truncate>
-          {worktreeDirName(leaf.repoPath)}
-        </Text>
-      </Stack>
-      <Text c="dimmed" aria-hidden="true">
-        ±
-      </Text>
-    </UnstyledButton>
+    <Box style={{ position: "relative" }}>
+      <UnstyledButton
+        data-worktree-leaf
+        data-branch={leaf.branch ?? "(detached)"}
+        data-completed={completed || undefined}
+        aria-current={selected || undefined}
+        onClick={onSelect}
+        title={leaf.repoPath}
+        p="xs"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          borderRadius: 6,
+          width: "100%",
+          paddingRight: 28,
+          opacity: completed ? 0.6 : 1,
+          backgroundColor: selected ? "var(--mantine-color-grape-light)" : undefined,
+        }}
+      >
+        <StatusIndicator changes={leaf.changes} />
+        <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+          <Text size="sm" truncate>
+            {worktreeDirName(leaf.repoPath)}
+          </Text>
+          <Text size="xs" c="dimmed" truncate>
+            {leaf.branch ?? "(detached)"}
+          </Text>
+        </Stack>
+      </UnstyledButton>
+      <ActionIcon
+        ref={triggerRef}
+        data-worktree-menu
+        variant="subtle"
+        color="gray"
+        size="xs"
+        title="Worktree actions"
+        aria-label={`Worktree actions for ${leaf.branch ?? leaf.repoPath}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuOpen((o) => !o);
+        }}
+        style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)" }}
+      >
+        <span style={{ fontSize: 15, lineHeight: 1 }} aria-hidden>
+          ⋯
+        </span>
+      </ActionIcon>
+      {menuOpen && (
+        <>
+          <Box
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+            }}
+            style={{ position: "fixed", inset: 0, zIndex: 200 }}
+            aria-hidden
+          />
+          <Paper
+            withBorder
+            shadow="md"
+            radius="md"
+            role="menu"
+            className="wt-menu"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                closeMenu();
+              }
+            }}
+            style={{ position: "absolute", right: 6, top: "calc(50% + 12px)", zIndex: 201, minWidth: 168 }}
+          >
+            <UnstyledButton
+              ref={itemRef}
+              role="menuitem"
+              className="wt-menu-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onDelete();
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 12, lineHeight: 1 }}>🗑</span>
+              Delete worktree
+            </UnstyledButton>
+          </Paper>
+        </>
+      )}
+    </Box>
   );
 }
 
@@ -98,6 +172,7 @@ function SidebarRepo({
   onToggle,
   onSelectRepo,
   onSelectWorktree,
+  onDeleteWorktree,
 }: {
   group: RepositoryGroup;
   expanded: boolean;
@@ -105,6 +180,7 @@ function SidebarRepo({
   onToggle: (repositoryId: string) => void;
   onSelectRepo: (repositoryId: string) => void;
   onSelectWorktree: (repoPath: string) => void;
+  onDeleteWorktree: (repoPath: string, branch: string | null) => void;
 }) {
   const leaves = worktreeLeaves(group);
   const isSelectedRepo = selection?.kind === "repo" && selection.repositoryId === group.repositoryId;
@@ -148,6 +224,7 @@ function SidebarRepo({
               leaf={leaf}
               selected={selection?.kind === "worktree" && selection.repoPath === leaf.repoPath}
               onSelect={() => onSelectWorktree(leaf.repoPath)}
+              onDelete={() => onDeleteWorktree(leaf.repoPath, leaf.branch ?? null)}
             />
           ))}
         </Stack>
@@ -164,6 +241,7 @@ export function Sidebar({
   onToggle,
   onSelectRepo,
   onSelectWorktree,
+  onDeleteWorktree,
 }: {
   groups: RepositoryGroup[];
   expanded: Set<string>;
@@ -172,24 +250,24 @@ export function Sidebar({
   onToggle: (repositoryId: string) => void;
   onSelectRepo: (repositoryId: string) => void;
   onSelectWorktree: (repoPath: string) => void;
+  onDeleteWorktree: (repoPath: string, branch: string | null) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? groups.filter(
+        (g) =>
+          g.repositoryName.toLowerCase().includes(q) ||
+          worktreeLeaves(g).some(
+            (l) =>
+              (l.branch ?? "").toLowerCase().includes(q) ||
+              worktreeDirName(l.repoPath).toLowerCase().includes(q)
+          )
+      )
+    : groups;
   return (
     <Box component="aside" className="sidebar" style={{ width, flex: "0 0 auto", overflowY: "auto" }}>
       <Box className="sidebar-head" p="sm">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={2}>
-          Workspace
-        </Text>
-        <Group gap={6} justify="space-between" wrap="nowrap" mb="xs">
-          <Group gap={4} wrap="nowrap">
-            <Text fw={700}>OpenSpec</Text>
-            <Text c="dimmed" aria-hidden>
-              ⌄
-            </Text>
-          </Group>
-          <Text c="dimmed" aria-hidden title="Edit workspace">
-            ✎
-          </Text>
-        </Group>
         <TextInput
           size="xs"
           variant="filled"
@@ -197,11 +275,12 @@ export function Sidebar({
           placeholder="Search repositories…"
           leftSection={<span aria-hidden>🔍</span>}
           aria-label="Search repositories"
-          readOnly
+          value={query}
+          onChange={(e) => setQuery(e.currentTarget.value)}
         />
       </Box>
       <Stack gap={4} p="xs">
-        {groups.map((g) => (
+        {shown.map((g) => (
           <SidebarRepo
             key={g.repositoryId}
             group={g}
@@ -210,6 +289,7 @@ export function Sidebar({
             onToggle={onToggle}
             onSelectRepo={onSelectRepo}
             onSelectWorktree={onSelectWorktree}
+            onDeleteWorktree={onDeleteWorktree}
           />
         ))}
       </Stack>

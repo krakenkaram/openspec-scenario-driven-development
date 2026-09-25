@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { theme } from "./theme";
 import { ChangeCard } from "./board";
@@ -24,45 +23,30 @@ function stubColorScheme(dark: boolean) {
 
 const schemeAttr = () => document.documentElement.getAttribute("data-mantine-color-scheme");
 
-describe("colour scheme follows the OS by default", () => {
+describe("dark mode is forced (light mode disabled)", () => {
   beforeEach(() => localStorage.clear());
 
-  it("opens dark when the OS reports dark", async () => {
-    stubColorScheme(true);
-    mockApi();
-    render(<App />);
-    await waitFor(() => expect(schemeAttr()).toBe("dark"));
-  });
-
-  it("opens light when the OS reports light", async () => {
+  it("opens dark even when the OS reports light", async () => {
     stubColorScheme(false);
     mockApi();
     render(<App />);
-    await waitFor(() => expect(schemeAttr()).toBe("light"));
-  });
-});
-
-describe("the user can toggle the colour scheme and it persists", () => {
-  beforeEach(() => localStorage.clear());
-
-  it("toggling flips the colour scheme and stores the choice", async () => {
-    stubColorScheme(true); // OS dark
-    mockApi();
-    const user = userEvent.setup();
-    render(<App />);
     await waitFor(() => expect(schemeAttr()).toBe("dark"));
-
-    await user.click(screen.getByRole("button", { name: /toggle .*light|colou?r scheme/i }));
-    await waitFor(() => expect(schemeAttr()).toBe("light"));
-    expect(localStorage.getItem("mantine-color-scheme-value")).toBe("light");
   });
 
-  it("honours a previously stored explicit choice on load", async () => {
-    stubColorScheme(true); // OS dark, but stored choice wins
+  it("ignores a stored light choice and stays dark", async () => {
+    stubColorScheme(false);
     localStorage.setItem("mantine-color-scheme-value", "light");
     mockApi();
     render(<App />);
-    await waitFor(() => expect(schemeAttr()).toBe("light"));
+    await waitFor(() => expect(schemeAttr()).toBe("dark"));
+  });
+
+  it("shows no colour-scheme toggle in the top bar", async () => {
+    stubColorScheme(true);
+    mockApi();
+    render(<App />);
+    await screen.findByText("Tentacles");
+    expect(screen.queryByTitle("Toggle dark / light")).toBeNull();
   });
 });
 

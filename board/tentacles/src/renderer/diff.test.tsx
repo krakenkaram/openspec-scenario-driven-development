@@ -356,7 +356,7 @@ describe("the inline diff degrades gracefully", () => {
     render(<App />);
     await user.click(await screen.findByTitle(LEAF));
 
-    expect(screen.getByText(/Loading…/)).toBeTruthy();
+    expect(screen.getByLabelText("Loading diff")).toBeTruthy();
     await act(async () => {
       resolveDiff(diffModel);
     });
@@ -743,5 +743,156 @@ describe("the inline diff separates hunks with a header row", () => {
       "diff-sign",
       "diff-text",
     ]);
+  });
+});
+
+
+describe("the open file stays selected across live refreshes", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("does not switch the shown file when another file is added on a poll", async () => {
+    vi.useFakeTimers();
+    const v1 = {
+      ok: true as const,
+      files: [
+        { path: "src/b.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "bbb" }] }] },
+        { path: "src/c.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "ccc" }] }] },
+      ],
+    };
+    // A poll where src/a.ts is added — it sorts (and indexes) before the open file.
+    const v2 = {
+      ok: true as const,
+      files: [
+        { path: "src/a.ts", status: "added" as const, hunks: [{ lines: [{ kind: "add" as const, text: "aaa" }] }] },
+        { path: "src/b.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "bbb" }] }] },
+        { path: "src/c.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "ccc" }] }] },
+      ],
+    };
+    const getDiff = vi.fn().mockResolvedValueOnce(v1).mockResolvedValue(v2);
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])), getDiff });
+
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // open src/c.ts in the tree
+    fireEvent.click(screen.getByTitle("src/c.ts"));
+    expect((document.querySelector(".diff-file-head") as HTMLElement).textContent).toContain("src/c.ts");
+
+    // a poll adds src/a.ts — the open file must stay src/c.ts, not switch
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect((document.querySelector(".diff-file-head") as HTMLElement).textContent).toContain("src/c.ts");
+  });
+});
+
+describe("the diff file tree is collapsible and searchable", () => {
+  const nested = {
+    ok: true as const,
+    files: [
+      { path: "src/main/core.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "A" }] }] },
+      { path: "src/renderer/app.tsx", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "B" }] }] },
+      { path: "README.md", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "D" }] }] },
+    ],
+  };
+
+  it("collapses a folder to hide its files and expands it to show them again", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(nested),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+
+    // src/ children are visible by default
+    expect(await screen.findByTitle("src/main/core.ts")).toBeTruthy();
+
+    const srcRow = (await screen.findByTitle("src")).closest(".diff-tree-dir-row") as HTMLElement;
+    await user.click(srcRow); // collapse
+    expect(screen.queryByTitle("src/main/core.ts")).toBeNull();
+    expect(screen.queryByTitle("main")).toBeNull();
+
+    await user.click(srcRow); // expand
+    expect(await screen.findByTitle("src/main/core.ts")).toBeTruthy();
+  });
+
+  it("filters the file tree to paths matching the search query", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(nested),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByTitle("src/main/core.ts");
+
+    await user.type(screen.getByLabelText("Search files"), "core");
+
+    expect(screen.getByTitle("src/main/core.ts")).toBeTruthy();
+    expect(screen.queryByTitle("src/renderer/app.tsx")).toBeNull();
+    expect(screen.queryByTitle("README.md")).toBeNull();
+  });
+});
+
+describe("the file-head expand button is right-aligned", () => {
+  it("pushes the expand/collapse control to the right of the head", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue({
+        ok: true,
+        files: [{ path: "a.txt", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "A" }] }] }],
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+
+    const btn = await screen.findByRole("button", { name: /expand full file/i });
+    expect(btn.style.marginLeft).toBe("auto");
+  });
+});
+
+describe("the diff panel chrome", () => {
+  it("keeps the AI review summary collapsed until its header is clicked", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(diffModel),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByText("new");
+
+    expect(screen.queryByText(/An automated review summary will appear/i)).toBeNull();
+    await user.click(screen.getByRole("button", { name: /AI Review Summary/i }));
+    expect(await screen.findByText(/An automated review summary will appear/i)).toBeTruthy();
+  });
+
+  it("shows a single Files tab with the count in a pill and no Changes tab", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])),
+      getDiff: vi.fn().mockResolvedValue(diffModel),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle(LEAF));
+    await screen.findByText("new");
+
+    expect(screen.queryByText("Changes")).toBeNull();
+    const tabs = document.querySelector(".diff-tabs") as HTMLElement;
+    expect(tabs.textContent).toContain("Files");
+    expect(tabs.textContent).toContain("1");
   });
 });

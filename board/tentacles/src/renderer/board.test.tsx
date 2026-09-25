@@ -100,7 +100,7 @@ describe("the renderer renders the board state", () => {
 
     expect(screen.getByText("n/a")).toBeInTheDocument();
     expect(screen.getByText("in progress")).toBeInTheDocument();
-    expect(screen.getByText("✓ done")).toBeInTheDocument();
+    expect(screen.getByText("✓")).toBeInTheDocument();
 
     // the done phase with a file is activatable (rendered as a button)
     expect(screen.getByText("grill").closest("button")).not.toBeNull();
@@ -221,6 +221,26 @@ describe("the renderer renders the board state", () => {
       expect(alertSpy).toHaveBeenCalledWith("Could not open folder: no such file or directory")
     );
     alertSpy.mockRestore();
+  });
+
+  it("shows the repository heading on the flows page without a collapse carat, while the sidebar keeps it", async () => {
+    const c = makeChange({ change: "flow-a", repositoryName: "repo-a" });
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([c])) });
+
+    render(<App />);
+    await screen.findByText("flow-a");
+
+    const mainPanel = document.querySelector("main") as HTMLElement;
+    // the flows-page heading still names the repo and its change count…
+    expect(within(mainPanel).getByText(/change\(s\)/)).toBeInTheDocument();
+    // …but carries no ▼/▶ collapse carat — that control lives only in the sidebar.
+    expect(mainPanel.textContent).not.toContain("▼");
+    expect(mainPanel.textContent).not.toContain("▶");
+
+    const sidebar = document.querySelector("aside.sidebar") as HTMLElement;
+    expect(
+      within(sidebar).getByRole("button", { name: /collapse repository|expand repository/i })
+    ).toBeInTheDocument();
   });
 
   it("renders the review and done nodes reflecting review and PR state", async () => {

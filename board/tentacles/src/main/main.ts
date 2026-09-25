@@ -25,6 +25,7 @@ const args = core.defaultArgs();
 // Main → renderer push channels, typed against the shared map (mirrors preload).
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
+  notification: "board:notification",
 };
 
 // Runs from build/main/ after compile, so preload and the renderer index resolve
@@ -86,12 +87,19 @@ app.whenReady().then(() => {
   // Native completion notifications: the notifier holds last-seen completion
   // state across scans and shows a native banner per newly-completed phase /
   // change, gated on the persisted preference (read fresh per scan so a Settings
-  // save takes effect without a restart).
+  // save takes effect without a restart). Every banner that fires is also pushed
+  // to the renderer as an in-app notification for the bell list, and the bundled
+  // sound plays when the banner is audible.
+  const send = (channel: string, payload?: unknown) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win?.webContents.send(channel, payload);
+  };
+  const nativeShow = makeNativeNotify(Notification, () => send(EVENTS.notificationSound));
   const notifier = makeNotifier(
-    makeNativeNotify(Notification, () => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win?.webContents.send(EVENTS.notificationSound);
-    }),
+    (n, opts) => {
+      nativeShow(n, opts);
+      send(EVENTS.notification, { title: n.title, body: n.body, at: Date.now() });
+    },
     () => core.resolveNotifications(settings.read())
   );
 

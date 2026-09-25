@@ -137,6 +137,24 @@ describe("file modal", () => {
     await user.click(within(dialog()).getByRole("button", { name: /close/i }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+  it("opens the file in the editor when its path in the modal title is clicked", async () => {
+    const api = mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([changeWithFile()])),
+      readFile: vi.fn().mockResolvedValue({ ok: true, contents: "hello contents" }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("file-demo");
+    await user.click(screen.getByText("grill"));
+    await screen.findByRole("dialog");
+
+    // the modal title is the file path, rendered as a clickable "open in editor"
+    // control (mirroring how a diff file opens externally).
+    await user.click(screen.getByRole("button", { name: /openspec\/changes\/x\/proposal\.md/ }));
+
+    expect(api.openFile).toHaveBeenCalledWith("/Code/repo-a", "/repo/openspec/changes/x/proposal.md");
+  });
 });
 
 function changeWithSpecs() {

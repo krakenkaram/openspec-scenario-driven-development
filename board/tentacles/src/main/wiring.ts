@@ -31,6 +31,7 @@ import type { Args, BoardNotification, NotificationSetting, NotifyState, Setting
 import type {
   ArchiveArgs,
   ArchiveExecuteArgs,
+  RemoveWorktreeArgs,
   ArchiveExecuteResult,
   ArchiveResult,
   TeardownAcceptances,
@@ -66,6 +67,7 @@ export const IPC: ChannelMap = {
   archive: "board:archive",
   archivePlan: "board:archivePlan",
   archiveExecute: "board:archiveExecute",
+  removeWorktree: "board:removeWorktree",
   getSettings: "board:getSettings",
   setSettings: "board:setSettings",
   chooseDirectory: "board:chooseDirectory",
@@ -93,6 +95,7 @@ export interface BoardCore {
     change: string,
     acceptances: TeardownAcceptances
   ): Promise<ArchiveExecuteResult>;
+  removeWorktreeFolder(args: Args, repoPath: string): Promise<OpenPathResult>;
   openWorktree(args: Args, target: string, opener: OpenPath): Promise<OpenPathResult>;
   openRepoFile(args: Args, repoPath: string, filePath: string, opener: OpenPath): Promise<OpenPathResult>;
   listSchemas(cwd?: string, home?: string): Promise<SchemaInfo[]>;
@@ -214,6 +217,10 @@ export function makeHandlers(
         acceptDirty: Boolean(acceptDirty),
       });
     },
+    removeWorktree: (_event: IpcMainInvokeEvent, payload: RemoveWorktreeArgs | undefined): Promise<OpenPathResult> => {
+      const { repoPath } = payload || ({} as Partial<RemoveWorktreeArgs>);
+      return core.removeWorktreeFolder(getArgs(), repoPath as string);
+    },
     getSettings: (): BoardSettings => ({
       root: settings ? settings.getRoot() : getArgs().root,
       notifications: settings ? resolveNotifications(settings.read()) : "enabled",
@@ -320,6 +327,7 @@ export function registerIpc(
   ipcMain.handle(IPC.archive, handlers.archive);
   ipcMain.handle(IPC.archivePlan, handlers.archivePlan);
   ipcMain.handle(IPC.archiveExecute, handlers.archiveExecute);
+  ipcMain.handle(IPC.removeWorktree, handlers.removeWorktree);
   ipcMain.handle(IPC.getSettings, handlers.getSettings);
   ipcMain.handle(IPC.setSettings, handlers.setSettings);
   ipcMain.handle(IPC.chooseDirectory, handlers.chooseDirectory);
@@ -406,8 +414,8 @@ export function makeWindowOpenHandler(
 
 export function createWindow(BrowserWindowCtor: typeof BrowserWindow, { preloadPath, indexPath, openExternal, show }: WindowOpts): BrowserWindow {
   const win = new BrowserWindowCtor({
-    width: 1440,
-    height: 860,
+    width: 1680,
+    height: 1040,
     backgroundColor: "#0a0e1a",
     show: show !== false,
     webPreferences: secureWebPreferences(preloadPath),
