@@ -184,6 +184,32 @@ describe("PlanController — opening the ticket is guarded and main-owned", () =
     const res = await h.controller.openTicket();
     expect(res).toEqual({ ok: false, error: "no handler" });
   });
+
+  it("rejects a TICKET.html symlink that escapes the folder, without touching the opener", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-symlink-"));
+    const outside = fs.mkdtempSync(path.join(TMP, "plan-outside-"));
+    const secret = path.join(outside, "secret.html");
+    fs.writeFileSync(secret, "<h1>secret</h1>");
+    fs.mkdirSync(path.join(folder, ".tentacles"), { recursive: true });
+    fs.symlinkSync(secret, path.join(folder, ".tentacles", "TICKET.html"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+
+    const res = await h.controller.openTicket();
+    expect(res.ok).toBe(false);
+    expect(h.opener.calls).toEqual([]);
+  });
+
+  it("rejects a directory at the TICKET.html path, without touching the opener", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-ticketdir-"));
+    fs.mkdirSync(path.join(folder, ".tentacles", "TICKET.html"), { recursive: true });
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+
+    const res = await h.controller.openTicket();
+    expect(res).toEqual({ ok: false, error: "not a file" });
+    expect(h.opener.calls).toEqual([]);
+  });
 });
 
 describe("PlanController — new refinement wipes only the ticket", () => {
@@ -257,6 +283,48 @@ describe("PlanController — terminal session lifecycle", () => {
     expect(h.runner.last()!.stopped).toBe(true);
     // A stop-driven exit from the killed child must not resurface as `ended`.
     h.runner.last()!.exit();
+    expect(h.ended).toBe(0);
+  });
+
+  it("fires no ended when a synchronous stop() exit races shutdown", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-sync-shutdown-"));
+    const runner = makeFakeAgentRunner({ exitOnStop: true });
+    const h = harness({ folder, runner });
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "x" });
+
+    // stop() fires onExit synchronously; the id must already be invalidated.
+    h.controller.shutdown();
+
+    expect(h.ended).toBe(0);
+  });
+
+  it("fires no ended and keeps the new session live when a synchronous stop() exit races replacement", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-sync-replace-"));
+    const runner = makeFakeAgentRunner({ exitOnStop: true });
+    const h = harness({ folder, runner });
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "first" });
+
+    // Starting a second session stops the first; its synchronous exit must not
+    // fire ended, and the new session must stay live.
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "second" });
+
+    expect(h.ended).toBe(0);
+    h.runner.sessions[1].emit({ speaker: "QA", text: "live" });
+    expect(h.pushed).toEqual([{ speaker: "QA", text: "live" }]);
+  });
+
+  it("fires no ended when a synchronous stop() exit races new refinement", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-sync-new-"));
+    const runner = makeFakeAgentRunner({ exitOnStop: true });
+    const h = harness({ folder, runner });
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "x" });
+
+    await h.controller.newRefinement();
+
     expect(h.ended).toBe(0);
   });
 });

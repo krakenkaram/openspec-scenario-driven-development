@@ -43,27 +43,32 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
         ended = true;
         onExit?.();
       };
+      // No turn may follow onExit (agentRunner seam contract): once ended, drop
+      // any late stdout/exit emission.
+      const emitTurn = (turn: PlanTurn) => {
+        if (!ended) onTurn(turn);
+      };
 
       child.stdout.on("data", (chunk) => {
         buffer += chunk.toString();
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          if (line.trim().length > 0) onTurn(attributeLine(line));
+          if (line.trim().length > 0) emitTurn(attributeLine(line));
         }
       });
 
       child.on("error", (err) => {
-        onTurn({ speaker: "error", text: err?.message ?? String(err) });
+        emitTurn({ speaker: "error", text: err?.message ?? String(err) });
         end();
       });
 
       child.on("exit", (code) => {
         if (buffer.trim().length > 0) {
-          onTurn(attributeLine(buffer));
+          emitTurn(attributeLine(buffer));
           buffer = "";
         }
-        if (code != null && code !== 0) onTurn({ speaker: "error", text: `agent exited with code ${code}` });
+        if (code != null && code !== 0) emitTurn({ speaker: "error", text: `agent exited with code ${code}` });
         end();
       });
 

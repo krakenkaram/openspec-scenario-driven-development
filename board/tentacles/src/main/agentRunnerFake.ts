@@ -21,7 +21,7 @@ export interface FakeAgentRunner extends AgentRunner {
   last(): FakeAgentSession | undefined;
 }
 
-export function makeFakeAgentRunner(opts: { failOnStart?: string } = {}): FakeAgentRunner {
+export function makeFakeAgentRunner(opts: { failOnStart?: string; exitOnStop?: boolean } = {}): FakeAgentRunner {
   const sessions: FakeAgentSession[] = [];
   return {
     sessions,
@@ -38,6 +38,8 @@ export function makeFakeAgentRunner(opts: { failOnStart?: string } = {}): FakeAg
         },
         stop: () => {
           session.stopped = true;
+          // Model a runtime that reports its exit synchronously from stop().
+          if (opts.exitOnStop) options.onExit?.();
         },
       };
       sessions.push(session);

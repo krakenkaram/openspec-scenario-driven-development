@@ -258,4 +258,56 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
     expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
     expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
   });
+
+  it("surfaces a start-session failure as an error turn", async () => {
+    mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      startPlanSession: vi.fn().mockResolvedValue({ ok: false, error: "start boom" }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    const err = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
+    expect(err).toBeTruthy();
+    expect(within(err).getByText(/start boom/i)).toBeInTheDocument();
+  });
+
+  it("surfaces a send failure as an error turn", async () => {
+    mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      sendPlanTurn: vi.fn().mockResolvedValue({ ok: false, error: "send boom" }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.type(screen.getByLabelText(/your reply/i), "an answer");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    const err = (await screen.findAllByTestId("chat-turn")).find(
+      (t) => t.getAttribute("data-speaker") === "error" && /send boom/i.test(t.textContent ?? "")
+    )!;
+    expect(err).toBeTruthy();
+  });
+
+  it("surfaces a new-refinement failure as an error turn and keeps the chat", async () => {
+    mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      newRefinement: vi.fn().mockResolvedValue({ ok: false, error: "wipe boom" }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: "New refinement" }));
+    await user.click(await screen.findByRole("button", { name: /discard ticket and start over/i }));
+
+    const err = (await screen.findAllByTestId("chat-turn")).find(
+      (t) => t.getAttribute("data-speaker") === "error" && /wipe boom/i.test(t.textContent ?? "")
+    )!;
+    expect(err).toBeTruthy();
+    // The wipe failed, so the chat is kept — not reset to the folder picker.
+    expect(screen.getByLabelText(/your reply/i)).toBeInTheDocument();
+  });
 });

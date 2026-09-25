@@ -130,4 +130,17 @@ describe("makeKiroAgentRunner — streaming and lifecycle", () => {
 
     expect(exits).toBe(1);
   });
+
+  it("emits no turns after onExit — a later exit or stdout is dropped", () => {
+    const fake = makeFakeChild();
+    const runner = makeKiroAgentRunner(() => fake.child);
+    const turns: PlanTurn[] = [];
+    runner.start({ skill: "s", folderPath: "/p", firstMessage: "hi", onTurn: (t) => turns.push(t) });
+
+    fake.emitError(new Error("boom"));
+    fake.emitExit(1);
+    fake.emitStdout("**BA:** late\n");
+
+    expect(turns).toEqual([{ speaker: "error", text: "boom" }]);
+  });
 });

@@ -51,9 +51,13 @@ export function makePlanController(
   let currentId = 0;
 
   function stopCurrent(): void {
-    session?.stop();
+    // Invalidate the session id BEFORE stopping, so a runner that fires onExit
+    // synchronously from stop() is seen as stale and cannot push a spurious
+    // planSessionEnded (design D7).
+    const handle = session;
     session = null;
     currentId = 0;
+    handle?.stop();
   }
 
   return {
