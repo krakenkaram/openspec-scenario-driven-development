@@ -3,7 +3,7 @@ import { act } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { mockApi, planTurnChannel, planSessionEndedChannel } from "./test-fixtures";
+import { mockApi, planTurnChannel, planStreamChannel, planBusyChannel, planSessionEndedChannel } from "./test-fixtures";
 
 async function gotoPlan(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "PLAN" }));
@@ -48,6 +48,62 @@ async function startSession(user: ReturnType<typeof userEvent.setup>, idea = "ad
 }
 
 describe("PLAN — amigos stream as named speakers and the user replies", () => {
+  it("groups consecutive turns from the same amigo into one message, keeping a different speaker separate", async () => {
+    const chan = planTurnChannel();
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    act(() => {
+      chan.emit({ speaker: "BA", text: "First thought." });
+      chan.emit({ speaker: "BA", text: "Second thought." });
+      chan.emit({ speaker: "QA", text: "A different voice." });
+    });
+
+    const baGroups = (await screen.findAllByTestId("chat-turn")).filter((t) => t.getAttribute("data-speaker") === "BA");
+    // Two consecutive BA turns collapse into one message with a single header,
+    // both lines shown in arrival order (the message grew line by line).
+    expect(baGroups).toHaveLength(1);
+    expect(within(baGroups[0]).getAllByText("BA")).toHaveLength(1);
+    expect(within(baGroups[0]).getAllByTestId("turn-line").map((l) => l.textContent)).toEqual([
+      "First thought.",
+      "Second thought.",
+    ]);
+    // The different speaker stays its own message.
+    const qaGroups = screen.getAllByTestId("chat-turn").filter((t) => t.getAttribute("data-speaker") === "QA");
+    expect(qaGroups).toHaveLength(1);
+  });
+
+  it("streams the partial line word by word, then shows the committed turn when it lands", async () => {
+    const chan = planTurnChannel();
+    const stream = planStreamChannel();
+    mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      onPlanTurn: chan.onPlanTurn,
+      onPlanStream: stream.onPlanStream,
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    // The partial grows word by word (no committed turn yet).
+    act(() => stream.set({ speaker: "BA", text: "What" }));
+    expect(await screen.findByText("What")).toBeInTheDocument();
+    act(() => stream.set({ speaker: "BA", text: "What problem?" }));
+    expect(await screen.findByText("What problem?")).toBeInTheDocument();
+
+    // The line commits as a turn and the partial clears — no duplicate.
+    act(() => {
+      chan.emit({ speaker: "BA", text: "What problem?" });
+      stream.set(null);
+    });
+    const baLines = within(
+      (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "BA")!
+    ).getAllByTestId("turn-line");
+    expect(baLines.map((l) => l.textContent)).toEqual(["What problem?"]);
+  });
+
   it("renders BA then QA turns as distinct named speakers in order", async () => {
     const chan = planTurnChannel();
     mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
@@ -72,10 +128,12 @@ describe("PLAN — amigos stream as named speakers and the user replies", () => 
   });
 
   it("relays the user's mid-session reply and shows it as the user", async () => {
-    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    const busy = planBusyChannel();
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanBusy: busy.onPlanBusy });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
+    act(() => busy.set(false));
 
     await user.type(screen.getByLabelText(/your reply/i), "here is my answer");
     await user.click(screen.getByRole("button", { name: /^send$/i }));
@@ -83,15 +141,79 @@ describe("PLAN — amigos stream as named speakers and the user replies", () => 
     await waitFor(() => expect(api.sendPlanTurn).toHaveBeenCalledWith("here is my answer"));
     expect(await screen.findByText("here is my answer")).toBeInTheDocument();
   });
+
+  it("submits the reply on Enter and on Ctrl+Enter, but Shift+Enter does not submit", async () => {
+    const busy = planBusyChannel();
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanBusy: busy.onPlanBusy });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+    act(() => busy.set(false));
+
+    const box = screen.getByLabelText(/your reply/i);
+    await user.click(box);
+    await user.type(box, "first answer{Enter}");
+    await waitFor(() => expect(api.sendPlanTurn).toHaveBeenCalledWith("first answer"));
+    act(() => busy.set(false));
+
+    // Shift+Enter must NOT submit (it inserts a newline).
+    await user.type(box, "line one{Shift>}{Enter}{/Shift}line two");
+    expect(api.sendPlanTurn).toHaveBeenCalledTimes(1);
+
+    // Ctrl+Enter submits.
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(api.sendPlanTurn).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows a thinking indicator and locks the reply box while an amigo is generating, then unlocks", async () => {
+    const busy = planBusyChannel();
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanBusy: busy.onPlanBusy });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    // The first idea optimistically enters the thinking state and locks the box.
+    expect(await screen.findByTestId("thinking")).toBeInTheDocument();
+    expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
+
+    act(() => busy.set(false));
+
+    expect(screen.queryByTestId("thinking")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/your reply/i)).not.toBeDisabled();
+  });
+
+  it("keeps the thinking indicator visible while the agent works even when a partial is streaming", async () => {
+    const busy = planBusyChannel();
+    const stream = planStreamChannel();
+    mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      onPlanBusy: busy.onPlanBusy,
+      onPlanStream: stream.onPlanStream,
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    // A partial line is on screen mid-generation — the dots must still show so the
+    // user has evidence the agent is working, not frozen.
+    act(() => stream.set({ speaker: "BA", text: "What" }));
+    expect(await screen.findByText("What")).toBeInTheDocument();
+    expect(screen.getByTestId("thinking")).toBeInTheDocument();
+
+    act(() => busy.set(false));
+    expect(screen.queryByTestId("thinking")).not.toBeInTheDocument();
+  });
 });
 
 describe("PLAN — the docs step is relayed by the agent, not refereed by the app", () => {
   it("renders docs offer/written/revised turns in order like any turn and relays the user's agreement", async () => {
     const chan = planTurnChannel();
-    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    const busy = planBusyChannel();
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn, onPlanBusy: busy.onPlanBusy });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user, "add a feature");
+    act(() => busy.set(false));
 
     act(() => chan.emit({ speaker: "system", text: "No tentacles docs found. Create them?" }));
     expect(await screen.findByText(/no tentacles docs found/i)).toBeInTheDocument();
@@ -105,7 +227,7 @@ describe("PLAN — the docs step is relayed by the agent, not refereed by the ap
       chan.emit({ speaker: "system", text: "Docs revised." });
     });
 
-    const texts = (await screen.findAllByTestId("chat-turn")).map((t) => t.textContent ?? "");
+    const texts = (await screen.findAllByTestId("turn-line")).map((t) => t.textContent ?? "");
     const iOffer = texts.findIndex((x) => x.includes("Create them"));
     const iWritten = texts.findIndex((x) => x.includes("Docs written"));
     const iRevised = texts.findIndex((x) => x.includes("Docs revised"));
@@ -122,6 +244,21 @@ describe("PLAN — the docs step is relayed by the agent, not refereed by the ap
     expect((api as unknown as Record<string, unknown>).checkTentaclesDocs).toBeUndefined();
     expect((api as unknown as Record<string, unknown>).tentaclesPresence).toBeUndefined();
     expect(screen.getByRole("button", { name: /choose folder/i })).toBeInTheDocument();
+  });
+
+  it("labels non-persona (system) turns as Tentacles, not System", async () => {
+    const chan = planTurnChannel();
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    act(() => chan.emit({ speaker: "system", text: "Loading the refinement procedure." }));
+
+    const sys = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "system")!;
+    expect(sys).toBeTruthy();
+    expect(within(sys).getByText("Tentacles")).toBeInTheDocument();
+    expect(within(sys).queryByText("System")).not.toBeInTheDocument();
   });
 });
 
@@ -242,13 +379,16 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
 
   it("disables the reply control once the session has ended", async () => {
     const ended = planSessionEndedChannel();
+    const busy = planBusyChannel();
     mockApi({
       planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      onPlanBusy: busy.onPlanBusy,
       onPlanSessionEnded: ended.onPlanSessionEnded,
     });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
+    act(() => busy.set(false));
 
     expect(screen.getByLabelText(/your reply/i)).not.toBeDisabled();
 
@@ -276,13 +416,16 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
   });
 
   it("surfaces a send failure as an error turn and disables the reply", async () => {
+    const busy = planBusyChannel();
     mockApi({
       planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      onPlanBusy: busy.onPlanBusy,
       sendPlanTurn: vi.fn().mockResolvedValue({ ok: false, error: "send boom" }),
     });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
+    act(() => busy.set(false));
 
     await user.type(screen.getByLabelText(/your reply/i), "an answer");
     await user.click(screen.getByRole("button", { name: /^send$/i }));

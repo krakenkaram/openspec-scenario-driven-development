@@ -16,9 +16,18 @@ export interface StartSessionOptions {
   firstMessage: string;
   // Called for each turn the agent produces, in arrival order.
   onTurn: (turn: PlanTurn) => void;
-  // Called exactly once when the underlying agent ends — clean exit, non-zero
-  // exit, or spawn error. Terminal: no turns follow it. The controller uses this
-  // to clear session state and notify the renderer so a dead session is inert.
+  // Called with the in-progress partial line as tokens stream in (word by word),
+  // and with null when there is no partial (the line just committed via onTurn or
+  // the turn ended). Lets the renderer show text growing live before it commits.
+  onStream?: (partial: PlanTurn | null) => void;
+  // Called true when a turn starts generating and false when it completes, so the
+  // renderer can show a thinking indicator and lock the reply box while an amigo
+  // is replying. A session is idle (not busy) between turns and stays alive.
+  onBusy?: (busy: boolean) => void;
+  // Called exactly once when the SESSION ends terminally — a hard failure
+  // (non-zero exit or spawn error) or an explicit stop(). A turn finishing
+  // cleanly does NOT end the session: the runner keeps it alive for the next
+  // send (each turn is one `kiro-cli --resume` run). Terminal: no turns follow.
   onExit?: () => void;
 }
 

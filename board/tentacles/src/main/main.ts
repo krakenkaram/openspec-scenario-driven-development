@@ -28,6 +28,8 @@ const args = core.defaultArgs();
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
   planTurn: "board:planTurn",
+  planStream: "board:planStream",
+  planBusy: "board:planBusy",
   planSessionEnded: "board:planSessionEnded",
 };
 
@@ -106,9 +108,17 @@ app.whenReady().then(() => {
     const win = BrowserWindow.getAllWindows()[0];
     win?.webContents.send(EVENTS.planTurn, turn);
   };
+  const pushPlanStream = (partial: PlanTurn | null) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win?.webContents.send(EVENTS.planStream, partial);
+  };
   const pushPlanEnded = () => {
     const win = BrowserWindow.getAllWindows()[0];
     win?.webContents.send(EVENTS.planSessionEnded);
+  };
+  const pushPlanBusy = (busy: boolean) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win?.webContents.send(EVENTS.planBusy, busy);
   };
   // A PLAN-scoped native directory picker; the chosen folder becomes authoritative
   // main-process state inside the controller (never a renderer-supplied path).
@@ -123,7 +133,9 @@ app.whenReady().then(() => {
   const plan = makePlanController(
     makeKiroAgentRunner(),
     pushPlanTurn,
+    pushPlanStream,
     pushPlanEnded,
+    pushPlanBusy,
     choosePlanFolder,
     (target: string) => shell.openPath(target)
   );

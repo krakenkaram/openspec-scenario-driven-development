@@ -36,6 +36,8 @@ const CHANNELS: ChannelMap = {
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
   planTurn: "board:planTurn",
+  planStream: "board:planStream",
+  planBusy: "board:planBusy",
   planSessionEnded: "board:planSessionEnded",
 };
 
@@ -72,6 +74,16 @@ const api: ElectronAPI = {
     const listener = (_event: unknown, turn: Parameters<typeof handler>[0]) => handler(turn);
     ipcRenderer.on(EVENTS.planTurn, listener);
     return () => ipcRenderer.removeListener(EVENTS.planTurn, listener);
+  },
+  onPlanBusy: (handler) => {
+    const listener = (_event: unknown, busy: boolean) => handler(busy);
+    ipcRenderer.on(EVENTS.planBusy, listener);
+    return () => ipcRenderer.removeListener(EVENTS.planBusy, listener);
+  },
+  onPlanStream: (handler) => {
+    const listener = (_event: unknown, partial: Parameters<typeof handler>[0]) => handler(partial);
+    ipcRenderer.on(EVENTS.planStream, listener);
+    return () => ipcRenderer.removeListener(EVENTS.planStream, listener);
   },
   onPlanSessionEnded: (handler) => {
     const listener = () => handler();

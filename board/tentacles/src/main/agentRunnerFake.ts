@@ -10,6 +10,10 @@ export interface FakeAgentSession {
   stopped: boolean;
   // Push a turn to the app as if the agent produced it.
   emit(turn: PlanTurn): void;
+  // Drive the live partial-line stream as if tokens were arriving.
+  stream(partial: PlanTurn | null): void;
+  // Drive the busy signal as if a turn started (true) or finished (false).
+  busy(value: boolean): void;
   // Fire the terminal end signal as if the underlying agent exited.
   exit(): void;
   send(text: string): void;
@@ -32,6 +36,8 @@ export function makeFakeAgentRunner(opts: { failOnStart?: string; exitOnStop?: b
         sent: [],
         stopped: false,
         emit: (turn) => options.onTurn(turn),
+        stream: (partial) => options.onStream?.(partial),
+        busy: (value) => options.onBusy?.(value),
         exit: () => options.onExit?.(),
         send: (text) => {
           session.sent.push(text);

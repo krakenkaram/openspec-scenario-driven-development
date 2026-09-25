@@ -44,6 +44,8 @@ interface Harness {
   controller: PlanController;
   runner: ReturnType<typeof makeFakeAgentRunner>;
   pushed: PlanTurn[];
+  streamed: (PlanTurn | null)[];
+  busy: boolean[];
   ended: number;
   opener: { open: OpenPath; calls: string[] };
 }
@@ -51,18 +53,22 @@ interface Harness {
 function harness(opts: { folder?: string | null; runner?: AgentRunner; openError?: (t: string) => string } = {}) {
   const runner = (opts.runner as ReturnType<typeof makeFakeAgentRunner>) ?? makeFakeAgentRunner();
   const pushed: PlanTurn[] = [];
+  const streamed: (PlanTurn | null)[] = [];
+  const busy: boolean[] = [];
   const state = { ended: 0 };
   const opener = fakeOpener(opts.openError);
   const controller = makePlanController(
     runner,
     (t) => pushed.push(t),
+    (p) => streamed.push(p),
     () => {
       state.ended += 1;
     },
+    (b) => busy.push(b),
     fakeChooser(opts.folder ?? null),
     opener.open
   );
-  return { controller, runner, pushed, opener, get ended() { return state.ended; } } as unknown as Harness;
+  return { controller, runner, pushed, streamed, busy, opener, get ended() { return state.ended; } } as unknown as Harness;
 }
 
 describe("composeOpeningPrompt — the hosted-agent contract", () => {
@@ -119,6 +125,51 @@ describe("PlanController — the picked folder is authoritative main-process sta
     await h.controller.chooseFolder();
     await h.controller.startSession({ idea: "x" });
     expect(fs.existsSync(path.join(folder, ".tentacles"))).toBe(false);
+  });
+
+  it("relays the live partial stream to the push sink for the live session only", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-stream-"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "x" });
+    const first = h.runner.last()!;
+
+    first.stream({ speaker: "BA", text: "Hel" });
+    first.stream({ speaker: "BA", text: "Hello" });
+    first.stream(null);
+    expect(h.streamed).toEqual([
+      { speaker: "BA", text: "Hel" },
+      { speaker: "BA", text: "Hello" },
+      null,
+    ]);
+
+    // Replace the session; the old one's stream must not leak through.
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "again" });
+    first.stream({ speaker: "BA", text: "stale" });
+    expect(h.streamed).toEqual([
+      { speaker: "BA", text: "Hel" },
+      { speaker: "BA", text: "Hello" },
+      null,
+    ]);
+  });
+
+  it("relays the agent busy signal to the push sink for the live session only", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-busy-"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "x" });
+    const first = h.runner.last()!;
+
+    first.busy(true);
+    first.busy(false);
+    expect(h.busy).toEqual([true, false]);
+
+    // Replace the session; the old one's busy signal must not leak through.
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "again" });
+    first.busy(true);
+    expect(h.busy).toEqual([true, false]);
   });
 });
 

@@ -298,10 +298,18 @@ export interface EventChannelMap {
   notificationSound: "board:notificationSound";
   // A PLAN agent turn pushed to the renderer as the hosted agent produces it.
   planTurn: "board:planTurn";
-  // Fired once when the hosted agent's session ends (clean exit, non-zero exit,
-  // or spawn error). The renderer disables the reply control on this signal so a
-  // dead session can no longer be typed into. The terminal error text, when any,
-  // arrives first as an `error` PlanTurn.
+  // The in-progress partial line as tokens stream in (word by word), or null when
+  // there is no partial. Lets the renderer show text growing live before it
+  // commits as a `planTurn`.
+  planStream: "board:planStream";
+  // Pushed true when an amigo turn starts generating and false when it finishes,
+  // so the renderer shows a thinking indicator and locks the reply box while the
+  // agent is replying. Between turns the session is idle (false) but still live.
+  planBusy: "board:planBusy";
+  // Fired once when the hosted agent's session ends (a hard failure — non-zero
+  // exit or spawn error — or an explicit stop). The renderer disables the reply
+  // control on this signal so a dead session can no longer be typed into. The
+  // terminal error text, when any, arrives first as an `error` PlanTurn.
   planSessionEnded: "board:planSessionEnded";
 }
 
@@ -363,6 +371,12 @@ export interface ElectronAPI {
   newRefinement(): Promise<NewRefinementResult>;
   // Subscribe to agent turns pushed from main; returns an unsubscribe function.
   onPlanTurn(handler: (turn: PlanTurn) => void): () => void;
+  // Subscribe to the live partial line (word-by-word streaming), or null when
+  // there is no partial; returns an unsubscribe function.
+  onPlanStream(handler: (partial: PlanTurn | null) => void): () => void;
+  // Subscribe to the busy signal (true while an amigo turn is generating, false
+  // when idle); returns an unsubscribe function.
+  onPlanBusy(handler: (busy: boolean) => void): () => void;
   // Subscribe to the terminal session-ended signal; returns an unsubscribe fn.
   onPlanSessionEnded(handler: () => void): () => void;
 }

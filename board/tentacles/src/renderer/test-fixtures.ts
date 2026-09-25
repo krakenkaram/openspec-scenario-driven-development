@@ -76,6 +76,8 @@ export type MockApi = {
   planChooseFolder: ReturnType<typeof vi.fn>;
   newRefinement: ReturnType<typeof vi.fn>;
   onPlanTurn: ReturnType<typeof vi.fn>;
+  onPlanStream: ReturnType<typeof vi.fn>;
+  onPlanBusy: ReturnType<typeof vi.fn>;
   onPlanSessionEnded: ReturnType<typeof vi.fn>;
 };
 
@@ -115,6 +117,8 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     planChooseFolder: vi.fn().mockResolvedValue({ path: null }),
     newRefinement: vi.fn().mockResolvedValue({ ok: true }),
     onPlanTurn: vi.fn().mockReturnValue(() => {}),
+    onPlanStream: vi.fn().mockReturnValue(() => {}),
+    onPlanBusy: vi.fn().mockReturnValue(() => {}),
     onPlanSessionEnded: vi.fn().mockReturnValue(() => {}),
     ...over,
   } as unknown as MockApi;
@@ -155,6 +159,43 @@ export function planSessionEndedChannel() {
     unsubscribe,
     end() {
       handler?.();
+    },
+  };
+}
+
+// A scriptable fake for the planBusy push channel: pass `onPlanBusy` into
+// mockApi, then call `set(busy)` to drive the thinking indicator / box lock.
+export function planBusyChannel() {
+  let handler: ((busy: boolean) => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanBusy = vi.fn((cb: (busy: boolean) => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanBusy,
+    unsubscribe,
+    set(busy: boolean) {
+      handler?.(busy);
+    },
+  };
+}
+
+// A scriptable fake for the planStream push channel: pass `onPlanStream` into
+// mockApi, then call `set(partial)` to drive the live word-by-word partial line
+// (or `set(null)` to clear it).
+export function planStreamChannel() {
+  let handler: ((partial: PlanTurn | null) => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanStream = vi.fn((cb: (partial: PlanTurn | null) => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanStream,
+    unsubscribe,
+    set(partial: PlanTurn | null) {
+      handler?.(partial);
     },
   };
 }

@@ -38,7 +38,9 @@ export function composeOpeningPrompt(idea: string): string {
 export function makePlanController(
   runner: AgentRunner,
   pushTurn: (turn: PlanTurn) => void,
+  pushStream: (partial: PlanTurn | null) => void,
   pushEnded: () => void,
+  pushBusy: (busy: boolean) => void,
   chooseDirectory: ChooseDirectory,
   openPath: OpenPath
 ): PlanController {
@@ -88,6 +90,12 @@ export function makePlanController(
         firstMessage: composeOpeningPrompt(idea),
         onTurn: (turn) => {
           if (id === currentId) pushTurn(turn);
+        },
+        onStream: (partial) => {
+          if (id === currentId) pushStream(partial);
+        },
+        onBusy: (busy) => {
+          if (id === currentId) pushBusy(busy);
         },
         onExit: () => {
           if (id !== currentId) return;
