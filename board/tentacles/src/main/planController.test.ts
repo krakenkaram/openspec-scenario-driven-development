@@ -30,4 +30,30 @@ describe("PlanController — starting a refinement session", () => {
     expect(res.ok).toBe(false);
     expect(runner.sessions).toHaveLength(0);
   });
+
+  it("forwards agent turns to the push sink and relays user turns to the agent", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "plan-relay-"));
+    const runner = makeFakeAgentRunner();
+    const pushed: { speaker: string; text: string }[] = [];
+    const controller = makePlanController(runner, (t) => pushed.push(t));
+    await controller.startSession({ folderPath: folder, idea: "x" });
+
+    runner.last()!.emit({ speaker: "BA", text: "What problem?" });
+    expect(pushed).toEqual([{ speaker: "BA", text: "What problem?" }]);
+
+    const res = await controller.sendTurn("my answer");
+    expect(res).toEqual({ ok: true });
+    expect(runner.last()!.sent).toEqual(["my answer"]);
+  });
+
+  it("does not itself probe for or write docs — the agent owns that", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "plan-nodocs-"));
+    const runner = makeFakeAgentRunner();
+    const controller = makePlanController(runner, () => {});
+
+    await controller.startSession({ folderPath: folder, idea: "x" });
+
+    // The controller performs no docs IO of its own; the folder is untouched by the app.
+    expect(fs.existsSync(path.join(folder, ".tentacles"))).toBe(false);
+  });
 });

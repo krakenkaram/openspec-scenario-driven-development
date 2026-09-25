@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Button, Group, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
 import type { PlanTurn } from "../shared/ipc-contract";
 
@@ -15,9 +15,21 @@ function KiroEngineBadge() {
   );
 }
 
+const SPEAKER_LABEL: Record<PlanTurn["speaker"], string> = {
+  BA: "BA",
+  Dev: "Dev",
+  QA: "QA",
+  system: "System",
+  error: "Error",
+  user: "You",
+};
+
 function ChatTurn({ turn }: { turn: PlanTurn }) {
   return (
     <Box data-testid="chat-turn" data-speaker={turn.speaker} className={`chat-turn speaker-${turn.speaker}`}>
+      <Text size="xs" fw={700} className="turn-speaker">
+        {SPEAKER_LABEL[turn.speaker]}
+      </Text>
       <Text size="sm">{turn.text}</Text>
     </Box>
   );
@@ -28,6 +40,12 @@ export function PlanView() {
   const [idea, setIdea] = useState("");
   const [turns, setTurns] = useState<PlanTurn[]>([]);
   const [started, setStarted] = useState(false);
+
+  useEffect(() => {
+    return window.electronAPI.onPlanTurn((turn) => {
+      setTurns((t) => [...t, turn]);
+    });
+  }, []);
 
   const browse = async () => {
     const res = await window.electronAPI.chooseDirectory();
