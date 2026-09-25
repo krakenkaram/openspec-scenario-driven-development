@@ -45,30 +45,24 @@
 
 .app-body { display: flex; align-items: stretch; height: calc(100vh - 59px); }
 
-/* Workspace rail */
+/* Phase rail (PLAN / BUILD / RELEASE) */
 .ws-rail {
   flex: 0 0 60px; display: flex; flex-direction: column; align-items: center;
   gap: 10px; padding: 12px 0; background: var(--mantine-color-dark-9);
   border-right: 1px solid var(--mantine-color-default-border); overflow: hidden;
 }
-.ws-rail-top {
-  width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center;
-  justify-content: center; color: var(--mantine-color-dimmed); font-size: 1.3rem;
-  border: 1px dashed var(--mantine-color-default-border);
-}
 .ws-rail-list { margin-top: 2px; }
-.ws-avatar {
-  width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center;
-  justify-content: center; font-weight: 700; font-size: 0.95rem; color: var(--mantine-color-dark-0);
-  background: var(--mantine-color-dark-6); border: 1px solid var(--mantine-color-default-border);
-  cursor: pointer;
+.phase-square {
+  width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: 0.5rem; letter-spacing: 0.04em;
+  color: var(--mantine-color-dark-0); background: var(--mantine-color-dark-6);
+  border: 1px solid var(--mantine-color-default-border); cursor: pointer; text-align: center;
 }
-.ws-avatar.active {
+.phase-square.active {
   background: linear-gradient(135deg, var(--mantine-color-magenta-6), var(--mantine-color-purple-6));
-  border-color: var(--mantine-color-magenta-5);
+  border-color: var(--mantine-color-magenta-5); color: #fff;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--mantine-color-magenta-6) 45%, transparent);
 }
-.ws-avatar-add { color: var(--mantine-color-dimmed); background: transparent; border-style: dashed; }
 
 /* Layout: sidebar + resize handle + main */
 .layout { flex: 1; display: flex; align-items: stretch; min-width: 0; }

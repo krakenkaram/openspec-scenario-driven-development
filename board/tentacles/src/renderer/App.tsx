@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, TextInput, Title, UnstyledButton, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
+import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, TextInput, Title, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -8,6 +8,8 @@ import { Modal, type ModalSection } from "./modal";
 import { Sidebar, type Selection } from "./sidebar";
 import { DiffPanel } from "./diffPanel";
 import { SettingsPanel } from "./settings";
+import { PhaseRail, type Phase } from "./phaseRail";
+import { PlanView } from "./plan";
 import notificationSoundUrl from "./assets/msn-message.mp3";
 import logoUrl from "./assets/logo.png";
 
@@ -17,33 +19,6 @@ const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
 
 // Mantine owns the colour scheme end to end; app.css keys its diff-renderer and
 // markdown colour variables off Mantine's [data-mantine-color-scheme] attribute.
-// The far-left workspace rail: switch between workspaces. Decorative for now —
-// the app scans a single configured root — but present to match the shell.
-function WorkspaceRail() {
-  const workspaces = [
-    { key: "os", label: "🐙", title: "OpenSpec", active: true },
-    { key: "w", label: "W", title: "Wings" },
-    { key: "c", label: "C", title: "Cloud" },
-    { key: "d", label: "D", title: "Devices" },
-  ];
-  return (
-    <Box component="nav" className="ws-rail" aria-label="Workspaces">
-      <UnstyledButton className="ws-rail-top" title="New workspace" aria-label="New workspace">
-        +
-      </UnstyledButton>
-      <Stack gap="xs" align="center" className="ws-rail-list">
-        {workspaces.map((w) => (
-          <div key={w.key} className={`ws-avatar${w.active ? " active" : ""}`} title={w.title} aria-label={w.title}>
-            {w.label}
-          </div>
-        ))}
-        <UnstyledButton className="ws-avatar ws-avatar-add" title="Add workspace" aria-label="Add workspace">
-          +
-        </UnstyledButton>
-      </Stack>
-    </Box>
-  );
-}
 
 function ThemeToggle() {
   const { setColorScheme } = useMantineColorScheme();
@@ -104,6 +79,7 @@ export default function App() {
     sections: [],
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activePhase, setActivePhase] = useState<Phase>("build");
   const [confirm, setConfirm] = useState<null | {
     title: string;
     detail?: string;
@@ -478,26 +454,34 @@ export default function App() {
         </Group>
       </Group>
       <div className="app-body">
-        <WorkspaceRail />
-        <div className="layout" ref={layoutRef}>
-          <Sidebar
-            groups={grouped}
-            expanded={expanded}
-            selection={selection}
-            width={sidebarWidth}
-            onToggle={toggleRepo}
-            onSelectRepo={selectRepo}
-            onSelectWorktree={selectWorktree}
-          />
-          <div
-            className="sb-resize"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
-            onMouseDown={startResize}
-          />
-          <main>{main}</main>
-        </div>
+        <PhaseRail active={activePhase} onSelect={setActivePhase} />
+        {activePhase === "build" && (
+          <div className="layout" ref={layoutRef}>
+            <Sidebar
+              groups={grouped}
+              expanded={expanded}
+              selection={selection}
+              width={sidebarWidth}
+              onToggle={toggleRepo}
+              onSelectRepo={selectRepo}
+              onSelectWorktree={selectWorktree}
+            />
+            <div
+              className="sb-resize"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              onMouseDown={startResize}
+            />
+            <main>{main}</main>
+          </div>
+        )}
+        {activePhase === "plan" && <PlanView />}
+        {activePhase === "release" && (
+          <Center data-testid="release-phase" p="xl" style={{ flex: 1 }}>
+            <Text c="dimmed">Release — coming soon.</Text>
+          </Center>
+        )}
       </div>
       <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
       <MantineModal
