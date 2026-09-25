@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { Change, ElectronAPI, Phase, StatusResult } from "../shared/ipc-contract";
+import type { Change, ElectronAPI, Phase, PlanTurn, StatusResult } from "../shared/ipc-contract";
 
 export function phase(id: Phase["id"], over: Partial<Phase> = {}): Phase {
   return { id, applicable: true, done: false, files: [], fileExists: false, ...over };
@@ -70,6 +70,10 @@ export type MockApi = {
   installSchema: ReturnType<typeof vi.fn>;
   uninstallSchema: ReturnType<typeof vi.fn>;
   openSchemaFile: ReturnType<typeof vi.fn>;
+  startPlanSession: ReturnType<typeof vi.fn>;
+  sendPlanTurn: ReturnType<typeof vi.fn>;
+  newRefinement: ReturnType<typeof vi.fn>;
+  onPlanTurn: ReturnType<typeof vi.fn>;
 };
 
 export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
@@ -102,8 +106,31 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     installSchema: vi.fn().mockResolvedValue({ ok: true }),
     uninstallSchema: vi.fn().mockResolvedValue({ ok: true }),
     openSchemaFile: vi.fn().mockResolvedValue({ ok: true }),
+    startPlanSession: vi.fn().mockResolvedValue({ ok: true }),
+    sendPlanTurn: vi.fn().mockResolvedValue({ ok: true }),
+    newRefinement: vi.fn().mockResolvedValue({ ok: true }),
+    onPlanTurn: vi.fn().mockReturnValue(() => {}),
     ...over,
   } as unknown as MockApi;
   (window as unknown as { electronAPI: ElectronAPI }).electronAPI = api as unknown as ElectronAPI;
   return api;
+}
+
+// A scriptable fake for the planTurn push channel: pass `onPlanTurn` into
+// mockApi, then call `emit(turn)` to push a turn to whatever handler the app
+// registered. Mirrors the onNotificationSound capture pattern.
+export function planTurnChannel() {
+  let handler: ((turn: PlanTurn) => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanTurn = vi.fn((cb: (turn: PlanTurn) => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanTurn,
+    unsubscribe,
+    emit(turn: PlanTurn) {
+      handler?.(turn);
+    },
+  };
 }

@@ -25,6 +25,7 @@ const args = core.defaultArgs();
 // Main → renderer push channels, typed against the shared map (mirrors preload).
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
+  planTurn: "board:planTurn",
 };
 
 // Runs from build/main/ after compile, so preload and the renderer index resolve

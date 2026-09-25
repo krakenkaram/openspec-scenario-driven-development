@@ -53,6 +53,10 @@ import type {
   SetSettingsResult,
   StatusResult,
   Target,
+  StartPlanSessionArgs,
+  StartPlanSessionResult,
+  SendPlanTurnResult,
+  NewRefinementResult,
 } from "../shared/ipc-contract";
 
 // IPC channel names. preload.ts hardcodes the same string literals (a sandboxed
@@ -77,6 +81,9 @@ export const IPC: ChannelMap = {
   installSchema: "board:installSchema",
   uninstallSchema: "board:uninstallSchema",
   openSchemaFile: "board:openSchemaFile",
+  startPlanSession: "board:startPlanSession",
+  sendPlanTurn: "board:sendPlanTurn",
+  newRefinement: "board:newRefinement",
 };
 
 // The subset of core the handlers depend on.
@@ -174,6 +181,16 @@ export interface SetupDeps {
   probe: DoctorProbe;
 }
 
+// PLAN's session orchestration, injected like the other optional deps. It owns
+// the running agent (via the AgentRunner seam) and pushes turns to the renderer;
+// the handlers here only relay to it. Absent when PLAN is not wired (existing
+// tests), in which case the channels report "plan unavailable".
+export interface PlanController {
+  startSession(payload: StartPlanSessionArgs): Promise<StartPlanSessionResult>;
+  sendTurn(text: string): Promise<SendPlanTurnResult>;
+  newRefinement(folderPath: string): Promise<NewRefinementResult>;
+}
+
 // The privileged operations, each backed by core. `getArgs` is a getter
 // so the scan args are read fresh per call. `observe` (optional) is handed each
 // scan's changes so completion notifications can fire main-side. `settings`
@@ -187,7 +204,8 @@ export function makeHandlers(
   chooseDirectory?: ChooseDirectory,
   openPath?: OpenPath,
   setup?: SetupDeps,
-  reveal?: OpenPath
+  reveal?: OpenPath,
+  plan?: PlanController
 ) {
   return {
     getStatus: async () => {
@@ -293,6 +311,18 @@ export function makeHandlers(
       if (!reveal) return { ok: false, error: "reveal unavailable" };
       return core.openSchemaFile(getArgs(), name, repoPath, reveal);
     },
+    startPlanSession: async (_event: IpcMainInvokeEvent, payload: StartPlanSessionArgs | undefined): Promise<StartPlanSessionResult> => {
+      if (!plan) return { ok: false, error: "plan unavailable" };
+      return plan.startSession(payload ?? { folderPath: "", idea: "" });
+    },
+    sendPlanTurn: async (_event: IpcMainInvokeEvent, text: string): Promise<SendPlanTurnResult> => {
+      if (!plan) return { ok: false, error: "plan unavailable" };
+      return plan.sendTurn(text ?? "");
+    },
+    newRefinement: async (_event: IpcMainInvokeEvent, folderPath: string): Promise<NewRefinementResult> => {
+      if (!plan) return { ok: false, error: "plan unavailable" };
+      return plan.newRefinement(folderPath ?? "");
+    },
   };
 }
 
@@ -310,9 +340,10 @@ export function registerIpc(
   chooseDirectory?: ChooseDirectory,
   openPath?: OpenPath,
   setup?: SetupDeps,
-  reveal?: OpenPath
+  reveal?: OpenPath,
+  plan?: PlanController
 ) {
-  const handlers = makeHandlers(core, getArgs, observe, settings, chooseDirectory, openPath, setup, reveal);
+  const handlers = makeHandlers(core, getArgs, observe, settings, chooseDirectory, openPath, setup, reveal, plan);
   ipcMain.handle(IPC.getStatus, handlers.getStatus);
   ipcMain.handle(IPC.readFile, handlers.readFile);
   ipcMain.handle(IPC.getDiff, handlers.getDiff);
@@ -331,6 +362,9 @@ export function registerIpc(
   ipcMain.handle(IPC.installSchema, handlers.installSchema);
   ipcMain.handle(IPC.uninstallSchema, handlers.uninstallSchema);
   ipcMain.handle(IPC.openSchemaFile, handlers.openSchemaFile);
+  ipcMain.handle(IPC.startPlanSession, handlers.startPlanSession);
+  ipcMain.handle(IPC.sendPlanTurn, handlers.sendPlanTurn);
+  ipcMain.handle(IPC.newRefinement, handlers.newRefinement);
   return handlers;
 }
 
@@ -446,6 +480,7 @@ export interface BootstrapDeps {
   openPath?: OpenPath;
   revealItem?: OpenPath;
   setup?: SetupDeps;
+  plan?: PlanController;
   // macOS tray collaborators, injected so the wiring stays unit-testable with
   // fakes. Supplied by main.ts on darwin; omitted on other platforms (no tray).
   Tray?: typeof import("electron").Tray;
@@ -475,12 +510,13 @@ export async function bootstrap({
   openPath,
   revealItem,
   setup,
+  plan,
   Tray,
   Menu,
   nativeImage,
   trayIconPath,
 }: BootstrapDeps) {
-  registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup, revealItem);
+  registerIpc(ipcMain, core, getArgs, observe, settings, chooseDirectory, openPath, setup, revealItem, plan);
   const windows = makeWindowManager(BrowserWindowCtor, windowOpts);
   const isMac = platform === "darwin";
   let started = false;

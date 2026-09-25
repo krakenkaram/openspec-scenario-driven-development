@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's eighteen
+// Type-only IPC contract: the single source of truth for the board's twenty-one
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -237,6 +237,25 @@ export interface DoctorArgs {
 }
 export type DoctorResult = { checks: ResultRow[] };
 
+// PLAN phase — the refinement chat. One hosted agent (the `tentacles-refinement`
+// skill, run by the engine) drives the whole conversation in the picked folder;
+// the app relays its turns and never referees the flow. Each turn carries the
+// speaker it belongs to so the renderer paints three named amigos plus the user
+// from one agent stream; `system` is unattributed output and `error` is a
+// terminal failure turn.
+export type PlanSpeaker = "BA" | "Dev" | "QA" | "user" | "system" | "error";
+export interface PlanTurn {
+  speaker: PlanSpeaker;
+  text: string;
+}
+export interface StartPlanSessionArgs {
+  folderPath: string;
+  idea: string;
+}
+export type StartPlanSessionResult = { ok: true } | { ok: false; error: string };
+export type SendPlanTurnResult = { ok: true } | { ok: false; error: string };
+export type NewRefinementResult = { ok: true } | { ok: false; error: string };
+
 // Exact method → channel-name mapping: the single source of truth for the
 // boundary. Both the preload bridge and the main-process IPC registry are typed
 // against it, so a typo, a missing channel, OR a swap (mapping a method to a
@@ -260,6 +279,9 @@ export interface ChannelMap {
   installSchema: "board:installSchema";
   uninstallSchema: "board:uninstallSchema";
   openSchemaFile: "board:openSchemaFile";
+  startPlanSession: "board:startPlanSession";
+  sendPlanTurn: "board:sendPlanTurn";
+  newRefinement: "board:newRefinement";
 }
 
 export type Channel = ChannelMap[keyof ChannelMap];
@@ -270,6 +292,8 @@ export type Channel = ChannelMap[keyof ChannelMap];
 // bundled completion sound, fired only when a banner is shown with sound.
 export interface EventChannelMap {
   notificationSound: "board:notificationSound";
+  // A PLAN agent turn pushed to the renderer as the hosted agent produces it.
+  planTurn: "board:planTurn";
 }
 
 export type EventChannel = EventChannelMap[keyof EventChannelMap];
@@ -309,4 +333,15 @@ export interface ElectronAPI {
   // addressed by schema NAME plus the change's repo so the main process resolves
   // the folder itself and reveals the file (see core.openSchemaFile).
   openSchemaFile(name: string, repoPath: string): Promise<OpenPathResult>;
+  // PLAN: start a refinement session for a picked folder and first idea. The main
+  // process starts the hosted agent (the tentacles-refinement skill) in that
+  // folder; its turns arrive via onPlanTurn.
+  startPlanSession(payload: StartPlanSessionArgs): Promise<StartPlanSessionResult>;
+  // Relay a user turn to the running agent.
+  sendPlanTurn(text: string): Promise<SendPlanTurnResult>;
+  // New refinement: delete only `<folder>/.tentacles/TICKET.html`, keeping the
+  // `.md` docs, and reset the session.
+  newRefinement(folderPath: string): Promise<NewRefinementResult>;
+  // Subscribe to agent turns pushed from main; returns an unsubscribe function.
+  onPlanTurn(handler: (turn: PlanTurn) => void): () => void;
 }
