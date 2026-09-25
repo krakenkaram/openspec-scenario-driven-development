@@ -4,7 +4,9 @@ import path from "node:path";
 import os from "node:os";
 import core from "./core";
 import type { Settings } from "./core";
-import type { EventChannelMap } from "../shared/ipc-contract";
+import type { EventChannelMap, PlanTurn } from "../shared/ipc-contract";
+import { makeKiroAgentRunner } from "./kiroAgentRunner";
+import { makePlanController } from "./planController";
 import {
   bootstrap,
   resolveShellPath,
@@ -96,6 +98,14 @@ app.whenReady().then(() => {
     () => core.resolveNotifications(settings.read())
   );
 
+  // PLAN: one hosted kiro agent per session runs the tentacles-refinement skill
+  // in the picked folder; its turns are pushed to the renderer's chat.
+  const pushPlanTurn = (turn: PlanTurn) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win?.webContents.send(EVENTS.planTurn, turn);
+  };
+  const plan = makePlanController(makeKiroAgentRunner(), pushPlanTurn);
+
   return bootstrap({
     app,
     BrowserWindow,
@@ -107,6 +117,7 @@ app.whenReady().then(() => {
     observe: notifier.observe,
     settings,
     chooseDirectory,
+    plan,
     openPath: (target: string) => shell.openPath(target),
     revealItem: (target: string) => {
       shell.showItemInFolder(target);
