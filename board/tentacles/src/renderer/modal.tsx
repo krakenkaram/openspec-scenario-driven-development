@@ -1,8 +1,24 @@
 import { useEffect, useState } from "react";
+import { Modal as MantineModal, Tabs } from "@mantine/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 export type ModalSection = { label: string; body: string };
+
+function Markdown({ body }: { body: string }) {
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+        }}
+      >
+        {body}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 export function Modal({
   open,
@@ -18,14 +34,6 @@ export function Modal({
   const [active, setActive] = useState(0);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  useEffect(() => {
     setActive(0);
   }, [sections]);
 
@@ -33,47 +41,28 @@ export function Modal({
   const current = sections[Math.min(active, Math.max(sections.length - 1, 0))];
 
   return (
-    <div
-      className={`overlay ${open ? "open" : ""}`}
-      onClick={(e) => {
-        if ((e.target as HTMLElement).classList.contains("overlay")) onClose();
-      }}
+    <MantineModal
+      opened={open}
+      onClose={onClose}
+      title={title}
+      size="xl"
+      transitionProps={{ duration: 0 }}
+      closeButtonProps={{ "aria-label": "Close" }}
     >
-      <div className="modal">
-        <div className="modal-head">
-          <span className="modal-title">{title}</span>
-          <button className="modal-x" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        {multi && (
-          <div className="modal-tabs" role="tablist">
+      {multi ? (
+        <Tabs value={String(active)} onChange={(v) => setActive(Number(v ?? 0))}>
+          <Tabs.List mb="md">
             {sections.map((s, i) => (
-              <button
-                key={`${s.label}\u0000${i}`}
-                role="tab"
-                aria-selected={i === active}
-                className={`modal-tab ${i === active ? "active" : ""}`}
-                onClick={() => setActive(i)}
-              >
+              <Tabs.Tab key={`${s.label}\u0000${i}`} value={String(i)}>
                 {s.label}
-              </button>
+              </Tabs.Tab>
             ))}
-          </div>
-        )}
-        <div className="modal-body">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a: ({ node: _node, ...props }) => (
-                <a {...props} target="_blank" rel="noopener noreferrer" />
-              ),
-            }}
-          >
-            {current?.body ?? ""}
-          </ReactMarkdown>
-        </div>
-      </div>
-    </div>
+          </Tabs.List>
+          <Markdown body={current?.body ?? ""} />
+        </Tabs>
+      ) : (
+        <Markdown body={current?.body ?? ""} />
+      )}
+    </MantineModal>
   );
 }

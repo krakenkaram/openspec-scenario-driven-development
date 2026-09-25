@@ -1,4 +1,4 @@
-import { test, expect } from "./helpers/launch";
+import { test, expect, selectRepo } from "./helpers/launch";
 
 // Group 5 — electron-app-smoke-coverage: "External PR links open in the system browser".
 test.describe("external PR links", () => {
@@ -13,7 +13,9 @@ test.describe("external PR links", () => {
       };
     });
 
-    const prLink = app.page.locator("a.pr-node");
+    // repo-alpha's checked-out branch carries the PR; select it to render the card.
+    await selectRepo(app, "repo-alpha");
+    const prLink = app.page.locator("a.pr-node").first();
     await expect(prLink).toBeVisible();
     await prLink.click();
 

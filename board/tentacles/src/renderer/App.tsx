@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, TextInput, Title, UnstyledButton, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
 import type { Change, StatusResult } from "../shared/ipc-contract";
+import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
 import { groupWorktrees } from "../shared/grouping";
 import { Modal, type ModalSection } from "./modal";
@@ -7,22 +9,63 @@ import { Sidebar, type Selection } from "./sidebar";
 import { DiffPanel } from "./diffPanel";
 import { SettingsPanel } from "./settings";
 import notificationSoundUrl from "./assets/msn-message.mp3";
+import logoUrl from "./assets/logo.png";
 
 const REFRESH_MS = 15000;
-type ThemeChoice = "light" | "dark" | null;
 
 const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
+
+// Mantine owns the colour scheme end to end; app.css keys its diff-renderer and
+// markdown colour variables off Mantine's [data-mantine-color-scheme] attribute.
+// The far-left workspace rail: switch between workspaces. Decorative for now —
+// the app scans a single configured root — but present to match the shell.
+function WorkspaceRail() {
+  const workspaces = [
+    { key: "os", label: "🐙", title: "OpenSpec", active: true },
+    { key: "w", label: "W", title: "Wings" },
+    { key: "c", label: "C", title: "Cloud" },
+    { key: "d", label: "D", title: "Devices" },
+  ];
+  return (
+    <Box component="nav" className="ws-rail" aria-label="Workspaces">
+      <UnstyledButton className="ws-rail-top" title="New workspace" aria-label="New workspace">
+        +
+      </UnstyledButton>
+      <Stack gap="xs" align="center" className="ws-rail-list">
+        {workspaces.map((w) => (
+          <div key={w.key} className={`ws-avatar${w.active ? " active" : ""}`} title={w.title} aria-label={w.title}>
+            {w.label}
+          </div>
+        ))}
+        <UnstyledButton className="ws-avatar ws-avatar-add" title="Add workspace" aria-label="Add workspace">
+          +
+        </UnstyledButton>
+      </Stack>
+    </Box>
+  );
+}
+
+function ThemeToggle() {
+  const { setColorScheme } = useMantineColorScheme();
+  const computed = useComputedColorScheme("dark", { getInitialValueInEffect: true });
+  return (
+    <ActionIcon
+      variant="subtle"
+      color="gray"
+      onClick={() => setColorScheme(computed === "dark" ? "light" : "dark")}
+      aria-label="Toggle colour scheme"
+      title="Toggle dark / light"
+    >
+      🌓
+    </ActionIcon>
+  );
+}
 
 // specs/<capability>/spec.md → <capability>; used as the tab label when several
 // spec files are shown together. Falls back to the file name for other shapes.
 function capabilityOf(file: string): string {
   const m = file.match(/specs\/([^/]+)\/[^/]+$/);
   return m ? (m[1] as string) : (file.split("/").pop() ?? file);
-}
-
-function readSavedTheme(): ThemeChoice {
-  const saved = localStorage.getItem("osb-theme");
-  return saved === "light" || saved === "dark" ? saved : null;
 }
 
 function readExpanded(): Set<string> {
@@ -49,7 +92,6 @@ export default function App() {
   const [stale, setStale] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
-  const [theme, setTheme] = useState<ThemeChoice>(() => readSavedTheme());
   const [expanded, setExpanded] = useState<Set<string>>(() => readExpanded());
   const [selection, setSelection] = useState<Selection>(() => readSelection());
   const [archived, setArchived] = useState<Set<string>>(() => new Set());
@@ -62,6 +104,13 @@ export default function App() {
     sections: [],
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirm, setConfirm] = useState<null | {
+    title: string;
+    detail?: string;
+    warnings: string[];
+    confirmLabel: string;
+    run: () => Promise<void>;
+  }>(null);
   const [sidebarWidth, setSidebarWidth] = useState(264);
   const layoutRef = useRef<HTMLDivElement>(null);
 
@@ -87,20 +136,6 @@ export default function App() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
-
-  useLayoutEffect(() => {
-    if (theme) document.documentElement.setAttribute("data-theme", theme);
-    else document.documentElement.removeAttribute("data-theme");
-  }, [theme]);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const effective = prev || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      const next: ThemeChoice = effective === "dark" ? "light" : "dark";
-      localStorage.setItem("osb-theme", next);
-      return next;
-    });
-  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -166,95 +201,101 @@ export default function App() {
     async (c: Change) => {
       const k = keyOf(c);
       if (inFlight.current.has(k)) return; // guard against a duplicate submission
-      inFlight.current.add(k);
-      const release = () => inFlight.current.delete(k);
-      const clearArchiving = () =>
-        setArchiving((prev) => {
-          const next = new Set(prev);
-          next.delete(k);
-          return next;
-        });
 
-      try {
-        const plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
-
-        let confirmed: boolean;
-        let execute: () => Promise<{ ok: boolean; error?: string }>;
-
-        if (plan.applies) {
-          confirmed = window.confirm(
-            [
-              `Archive "${c.change}" and tear down its worktree?`,
-              "",
-              ...plan.warnings,
-              "",
-              "This cannot be undone.",
-            ].join("\n")
-          );
-          execute = async () => {
-            const r = await window.electronAPI.archiveExecute({
-              repoPath: c.repoPath,
-              change: c.change,
-              acceptUnmerged: !plan.branchMerged,
-              acceptDirty: plan.dirty,
-            });
-            if (!r.archived) return { ok: false, error: r.archiveError || "unknown" };
-            if (r.worktreeRemoved === false) {
-              return { ok: true, error: `Archived, but the worktree could not be removed: ${r.worktreeError || "unknown"}` };
-            }
-            if (r.branchDeleted === false) {
-              return { ok: true, error: `Archived and worktree removed, but the branch was not deleted: ${r.branchError || "unknown"}` };
-            }
-            return { ok: true };
-          };
-        } else if (plan.keptReason === "primary") {
-          confirmed = window.confirm(
-            `Archive "${c.change}"?\n\nThis is the last change in this worktree, but the worktree will be kept because it is the primary checkout.`
-          );
-          execute = async () => {
-            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
-            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
-          };
-        } else {
-          confirmed = window.confirm(
-            `Archive "${c.change}"?\n\nThis runs \`openspec archive\` (moves it to changes/archive/). Reversible on disk.`
-          );
-          execute = async () => {
-            const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
-            return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
-          };
-        }
-
-        if (!confirmed) {
-          release();
-          return;
-        }
+      const runExecute = async (execute: () => Promise<{ ok: boolean; error?: string }>) => {
+        if (inFlight.current.has(k)) return;
+        inFlight.current.add(k);
         setArchiving((prev) => new Set(prev).add(k));
-
-        const res = await execute();
-        if (res.ok) {
-          if (res.error) window.alert(res.error); // archive succeeded; teardown was partial
-          clearArchiving();
-          setRemoving((prev) => new Set(prev).add(k));
-          setTimeout(() => {
-            release();
-            setArchived((prev) => new Set(prev).add(k));
-            setRemoving((prev) => {
-              const next = new Set(prev);
-              next.delete(k);
-              return next;
-            });
-            void refresh();
-          }, 320);
-        } else {
-          window.alert("Archive failed: " + res.error);
-          release();
+        const clearArchiving = () =>
+          setArchiving((prev) => {
+            const next = new Set(prev);
+            next.delete(k);
+            return next;
+          });
+        try {
+          const res = await execute();
+          if (res.ok) {
+            if (res.error) window.alert(res.error); // archive succeeded; teardown was partial
+            clearArchiving();
+            setRemoving((prev) => new Set(prev).add(k));
+            setTimeout(() => {
+              inFlight.current.delete(k);
+              setArchived((prev) => new Set(prev).add(k));
+              setRemoving((prev) => {
+                const next = new Set(prev);
+                next.delete(k);
+                return next;
+              });
+              void refresh();
+            }, 320);
+          } else {
+            window.alert("Archive failed: " + res.error);
+            inFlight.current.delete(k);
+            clearArchiving();
+          }
+        } catch (e) {
+          window.alert("Archive failed: " + e);
+          inFlight.current.delete(k);
           clearArchiving();
         }
+      };
+
+      let plan: Awaited<ReturnType<typeof window.electronAPI.archivePlan>>;
+      try {
+        plan = await window.electronAPI.archivePlan({ repoPath: c.repoPath, change: c.change });
       } catch (e) {
         window.alert("Archive failed: " + e);
-        release();
-        clearArchiving();
+        return;
+      }
+
+      if (plan.applies) {
+        const execute = async () => {
+          const r = await window.electronAPI.archiveExecute({
+            repoPath: c.repoPath,
+            change: c.change,
+            acceptUnmerged: !plan.branchMerged,
+            acceptDirty: plan.dirty,
+          });
+          if (!r.archived) return { ok: false, error: r.archiveError || "unknown" };
+          if (r.worktreeRemoved === false) {
+            return { ok: true, error: `Archived, but the worktree could not be removed: ${r.worktreeError || "unknown"}` };
+          }
+          if (r.branchDeleted === false) {
+            return { ok: true, error: `Archived and worktree removed, but the branch was not deleted: ${r.branchError || "unknown"}` };
+          }
+          return { ok: true };
+        };
+        setConfirm({
+          title: `Archive "${c.change}" and tear down its worktree?`,
+          detail: "This cannot be undone.",
+          warnings: plan.warnings,
+          confirmLabel: "Archive and remove worktree",
+          run: () => runExecute(execute),
+        });
+      } else if (plan.keptReason === "primary") {
+        const execute = async () => {
+          const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+          return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
+        };
+        setConfirm({
+          title: `Archive "${c.change}"?`,
+          detail: "This is the last change in this worktree, but the worktree will be kept because it is the primary checkout.",
+          warnings: [],
+          confirmLabel: "Archive",
+          run: () => runExecute(execute),
+        });
+      } else {
+        const execute = async () => {
+          const d = await window.electronAPI.archive({ repoPath: c.repoPath, change: c.change });
+          return d.ok ? { ok: true } : { ok: false, error: d.error || "unknown" };
+        };
+        setConfirm({
+          title: `Archive "${c.change}"?`,
+          detail: "This runs `openspec archive` (moves it to changes/archive/). Reversible on disk.",
+          warnings: [],
+          confirmLabel: "Archive",
+          run: () => runExecute(execute),
+        });
       }
     },
     [refresh]
@@ -328,11 +369,23 @@ export default function App() {
 
   let main: React.ReactNode;
   if (!status) {
-    main = <div className="empty">Loading…</div>;
+    main = (
+      <Center p="xl">
+        <Text c="dimmed">Loading…</Text>
+      </Center>
+    );
   } else if ("error" in status) {
-    main = <div className="err">Error: {status.error}</div>;
+    main = (
+      <Center p="xl">
+        <Text c="red">Error: {status.error}</Text>
+      </Center>
+    );
   } else if (grouped.length === 0) {
-    main = <div className="empty">No active OpenSpec changes found across {repoCount} repo(s).</div>;
+    main = (
+      <Center p="xl">
+        <Text c="dimmed">No active OpenSpec changes found across {repoCount} repo(s).</Text>
+      </Center>
+    );
   } else if (selectedGroup) {
     main = (
       <RepoGroup
@@ -354,8 +407,8 @@ export default function App() {
       .flatMap((g) => g.worktrees)
       .filter((c) => c.repoPath === selectedWorktreePath);
     main = (
-      <div className="worktree-detail">
-        <div className="worktree-detail-nodes">
+      <Stack className="worktree-detail" gap="md">
+        <Stack gap="sm">
           {worktreeChanges.map((c) => (
             <ChangeCard
               key={keyOf(c)}
@@ -367,54 +420,118 @@ export default function App() {
               removing={removing.has(keyOf(c))}
             />
           ))}
-        </div>
+        </Stack>
         <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />
-      </div>
+      </Stack>
     );
   } else {
     main = (
-      <div className="empty select-hint">
-        Select a repository to view its progress, or a worktree to view its live diff.
-      </div>
+      <Center p="xl">
+        <Text c="dimmed" ta="center" style={{ maxWidth: 420 }}>
+          Select a repository to view its progress, or a worktree to view its live diff.
+        </Text>
+      </Center>
     );
   }
 
   return (
-    <>
-      <header>
-        <h1>🗂️ OpenSpec Board</h1>
-        <div className="meta">
-          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Settings">
-            ⚙
-          </button>
-          <button className="theme-btn" onClick={toggleTheme} title="Toggle dark / light">
-            🌓
-          </button>
-          <span className={`dot ${stale ? "stale" : ""}`} />
-          <span>{statusText}</span>
+    <MantineProvider theme={theme} defaultColorScheme="auto">
+      <Group component="header" className="topbar" justify="space-between" wrap="nowrap" gap="md">
+        <Group gap="xs" wrap="nowrap" className="topbar-brand">
+          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={26} height={26} />
+          <Title order={1} size="h4" style={{ margin: 0 }}>
+            Tentacles
+          </Title>
+        </Group>
+        <div className="topbar-search">
+          <TextInput
+            variant="filled"
+            radius="md"
+            placeholder="Search repositories, specs, issues…"
+            leftSection={<span aria-hidden>🔍</span>}
+            rightSection={<kbd className="kbd">⌘K</kbd>}
+            rightSectionWidth={52}
+            aria-label="Search"
+            readOnly
+          />
         </div>
-      </header>
-      <div className="layout" ref={layoutRef}>
-        <Sidebar
-          groups={grouped}
-          expanded={expanded}
-          selection={selection}
-          width={sidebarWidth}
-          onToggle={toggleRepo}
-          onSelectRepo={selectRepo}
-          onSelectWorktree={selectWorktree}
-        />
-        <div
-          className="sb-resize"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          onMouseDown={startResize}
-        />
-        <main>{main}</main>
+        <Group gap="xs" wrap="nowrap">
+          <ThemeToggle />
+          <ActionIcon variant="subtle" color="gray" className="bell" title="Notifications" aria-label="Notifications">
+            🔔
+          </ActionIcon>
+          <ActionIcon variant="subtle" color="gray" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
+            ⚙
+          </ActionIcon>
+          <Group gap={8} wrap="nowrap" className="topbar-status" ml="xs">
+            <Box
+              component="span"
+              data-stale={stale || undefined}
+              title={stale ? "stale" : "live"}
+              className="status-dot"
+              style={{ background: stale ? "var(--mantine-color-orange-6)" : "var(--mantine-color-teal-6)" }}
+            />
+            <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              {statusText}
+            </Text>
+          </Group>
+        </Group>
+      </Group>
+      <div className="app-body">
+        <WorkspaceRail />
+        <div className="layout" ref={layoutRef}>
+          <Sidebar
+            groups={grouped}
+            expanded={expanded}
+            selection={selection}
+            width={sidebarWidth}
+            onToggle={toggleRepo}
+            onSelectRepo={selectRepo}
+            onSelectWorktree={selectWorktree}
+          />
+          <div
+            className="sb-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={startResize}
+          />
+          <main>{main}</main>
+        </div>
       </div>
       <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
+      <MantineModal
+        opened={!!confirm}
+        onClose={() => setConfirm(null)}
+        title={confirm?.title}
+        transitionProps={{ duration: 0 }}
+        closeButtonProps={{ "aria-label": "Close" }}
+      >
+        {confirm?.detail && <Text mb="sm">{confirm.detail}</Text>}
+        {confirm && confirm.warnings.length > 0 && (
+          <List spacing="xs" mb="md">
+            {confirm.warnings.map((w, i) => (
+              <List.Item key={i}>{w}</List.Item>
+            ))}
+          </List>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setConfirm(null)}>
+            Cancel
+          </Button>
+          <Button
+            color="red"
+            onClick={() => {
+              const pending = confirm;
+              setConfirm(null);
+              void pending?.run();
+            }}
+          >
+            {confirm?.confirmLabel}
+          </Button>
+        </Group>
+      </MantineModal>
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => void refresh()} />
-    </>
+    </MantineProvider>
   );
 }

@@ -17,7 +17,7 @@ describe("board — schema chip reveals its schema.yaml in Finder", () => {
     render(<App />);
     await screen.findByText("schema-click");
 
-    const card = screen.getByText("schema-click").closest(".change") as HTMLElement;
+    const card = screen.getByText("schema-click").closest("[data-change-card]") as HTMLElement;
     within(card).getByRole("button", { name: "atdd-driven" }).click();
 
     expect(openSchemaFile).toHaveBeenCalledWith("atdd-driven", "/Code/wings-core-a");
@@ -31,7 +31,7 @@ describe("board — schema chip reveals its schema.yaml in Finder", () => {
 
     render(<App />);
     await screen.findByText("schema-fail");
-    const card = screen.getByText("schema-fail").closest(".change") as HTMLElement;
+    const card = screen.getByText("schema-fail").closest("[data-change-card]") as HTMLElement;
     within(card).getByRole("button", { name: "refactor" }).click();
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining("schema.yaml not found")));

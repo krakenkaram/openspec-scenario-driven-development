@@ -89,7 +89,12 @@ function makeFakeMenu() {
   return { FakeMenu, built };
 }
 
-const fakeNativeImage = { createEmpty: () => ({}) };
+const fakeNativeImage = {
+  createEmpty: () => ({ empty: true }),
+  createFromPath: (p: string) => ({ path: p, empty: false }),
+};
+
+const TRAY_ICON = "/pkg/resources/tray.png";
 
 // Bundles the fake tray collaborators as bootstrap deps (cast to the Electron
 // constructor types they stand in for).
@@ -98,6 +103,7 @@ function trayDeps(t: ReturnType<typeof makeFakeTray>, m: ReturnType<typeof makeF
     Tray: t.FakeTray as unknown as BootstrapDeps["Tray"],
     Menu: m.FakeMenu as unknown as BootstrapDeps["Menu"],
     nativeImage: fakeNativeImage as unknown as BootstrapDeps["nativeImage"],
+    trayIconPath: TRAY_ICON,
   };
 }
 
@@ -285,7 +291,7 @@ describe("macOS minimise-on-close-to-tray wiring", () => {
     expect(instances).toHaveLength(1);
   });
 
-  it("creates exactly one tray with a non-empty title on darwin", async () => {
+  it("creates exactly one tray from the octopus icon path (non-empty image) on darwin", async () => {
     const app = fakeApp();
     const { FakeBrowserWindow } = makeFakeBrowserWindow();
     const tray = makeFakeTray();
@@ -299,7 +305,10 @@ describe("macOS minimise-on-close-to-tray wiring", () => {
     });
 
     expect(tray.instances).toHaveLength(1);
-    expect(tray.instances[0].title.length).toBeGreaterThan(0);
+    // the tray image is built from the bundled icon path, not an empty placeholder
+    expect(tray.instances[0].image).toEqual({ path: TRAY_ICON, empty: false });
+    // no emoji title fallback when a real icon is supplied
+    expect(tray.instances[0].title).toBe("");
   });
 
   it("creates no tray on non-darwin platforms", async () => {

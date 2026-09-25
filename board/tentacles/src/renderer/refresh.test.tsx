@@ -42,6 +42,6 @@ describe("auto-refresh and empty/error states", () => {
     render(<App />);
 
     expect(await screen.findByText("refresh failed — retrying")).toBeInTheDocument();
-    expect(document.querySelector(".dot")?.className).toContain("stale");
+    expect(await screen.findByTitle("stale")).toBeInTheDocument();
   });
 });
