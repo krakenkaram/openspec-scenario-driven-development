@@ -125,8 +125,12 @@ export function makePlanController(
       const folder = selectedFolder;
       selectedFolder = null;
       if (!folder) return { ok: true };
+      // Containment-guard the target exactly like openTicket, so a `.tentacles`
+      // (or TICKET.html) symlink escaping the folder can never make rmSync delete
+      // a file outside the selected folder (design D5, folder-scoped wipe).
+      const ticket = containedRealPath(folder, TICKET_REL);
+      if (!ticket) return { ok: false, error: "ticket path outside folder" };
       try {
-        const ticket = path.join(folder, ".tentacles", "TICKET.html");
         if (fs.existsSync(ticket)) fs.rmSync(ticket);
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };

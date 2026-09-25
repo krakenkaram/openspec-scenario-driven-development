@@ -72,7 +72,10 @@ export function PlanView() {
     setConfirmNew(false);
     const res = await window.electronAPI.newRefinement();
     if (!res.ok) {
+      // Main has already stopped the session and cleared the folder, so the chat
+      // is no longer live even though the wipe failed — keep it, but terminal.
       pushError(`Could not start a new refinement: ${res.error}`);
+      setEnded(true);
       return;
     }
     setStarted(false);
@@ -91,13 +94,19 @@ export function PlanView() {
       setIdea("");
       setStarted(true);
       const res = await window.electronAPI.startPlanSession({ idea: text });
-      if (!res.ok) pushError(res.error);
+      if (!res.ok) {
+        pushError(res.error);
+        setEnded(true);
+      }
     } else {
       if (ended) return;
       setTurns((t) => [...t, { speaker: "user", text }]);
       setIdea("");
       const res = await window.electronAPI.sendPlanTurn(text);
-      if (!res.ok) pushError(res.error);
+      if (!res.ok) {
+        pushError(res.error);
+        setEnded(true);
+      }
     }
   };
 

@@ -237,6 +237,24 @@ describe("PlanController — new refinement wipes only the ticket", () => {
     const res = await h.controller.newRefinement();
     expect(res).toEqual({ ok: true });
   });
+
+  it("refuses to wipe through a .tentacles symlink that escapes the folder, leaving the outside file", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-wipe-symlink-"));
+    const outside = fs.mkdtempSync(path.join(TMP, "plan-wipe-outside-"));
+    const outsideTentacles = path.join(outside, ".tentacles");
+    fs.mkdirSync(outsideTentacles, { recursive: true });
+    const outsideTicket = path.join(outsideTentacles, "TICKET.html");
+    fs.writeFileSync(outsideTicket, "<h1>do not delete</h1>");
+    // The folder's `.tentacles` is a symlink to the outside directory.
+    fs.symlinkSync(outsideTentacles, path.join(folder, ".tentacles"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+
+    const res = await h.controller.newRefinement();
+
+    expect(res.ok).toBe(false);
+    expect(fs.existsSync(outsideTicket)).toBe(true);
+  });
 });
 
 describe("PlanController — terminal session lifecycle", () => {

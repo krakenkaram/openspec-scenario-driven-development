@@ -259,7 +259,7 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
     expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
   });
 
-  it("surfaces a start-session failure as an error turn", async () => {
+  it("surfaces a start-session failure as an error turn and disables the reply", async () => {
     mockApi({
       planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
       startPlanSession: vi.fn().mockResolvedValue({ ok: false, error: "start boom" }),
@@ -271,9 +271,11 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
     const err = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
     expect(err).toBeTruthy();
     expect(within(err).getByText(/start boom/i)).toBeInTheDocument();
+    expect(await screen.findByTestId("session-ended")).toBeInTheDocument();
+    expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
   });
 
-  it("surfaces a send failure as an error turn", async () => {
+  it("surfaces a send failure as an error turn and disables the reply", async () => {
     mockApi({
       planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
       sendPlanTurn: vi.fn().mockResolvedValue({ ok: false, error: "send boom" }),
@@ -289,9 +291,11 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
       (t) => t.getAttribute("data-speaker") === "error" && /send boom/i.test(t.textContent ?? "")
     )!;
     expect(err).toBeTruthy();
+    expect(await screen.findByTestId("session-ended")).toBeInTheDocument();
+    expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
   });
 
-  it("surfaces a new-refinement failure as an error turn and keeps the chat", async () => {
+  it("surfaces a new-refinement failure as an error turn, keeps the chat, and disables the reply", async () => {
     mockApi({
       planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
       newRefinement: vi.fn().mockResolvedValue({ ok: false, error: "wipe boom" }),
@@ -307,7 +311,8 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
       (t) => t.getAttribute("data-speaker") === "error" && /wipe boom/i.test(t.textContent ?? "")
     )!;
     expect(err).toBeTruthy();
-    // The wipe failed, so the chat is kept — not reset to the folder picker.
-    expect(screen.getByLabelText(/your reply/i)).toBeInTheDocument();
+    // The wipe failed, so the chat is kept — but terminal (main stopped the session).
+    expect(await screen.findByTestId("session-ended")).toBeInTheDocument();
+    expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
   });
 });
