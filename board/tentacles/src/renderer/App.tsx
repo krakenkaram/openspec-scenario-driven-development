@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionIcon, Box, Button, Center, Group, List, MantineProvider, Modal as MantineModal, Stack, Text, TextInput, Title, UnstyledButton, useComputedColorScheme, useMantineColorScheme } from "@mantine/core";
-import type { Change, StatusResult } from "../shared/ipc-contract";
+import { ActionIcon, Badge, Box, Button, Center, Divider, Group, List, MantineProvider, Modal as MantineModal, Paper, ScrollArea, Stack, Text, TextInput, Title, UnstyledButton } from "@mantine/core";
+import type { AppNotification, Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
 import { groupWorktrees } from "../shared/grouping";
@@ -21,16 +21,13 @@ const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
 // the app scans a single configured root — but present to match the shell.
 function WorkspaceRail() {
   const workspaces = [
-    { key: "os", label: "🐙", title: "OpenSpec", active: true },
+    { key: "os", label: "🛠️", title: "OpenSpec", active: true },
     { key: "w", label: "W", title: "Wings" },
     { key: "c", label: "C", title: "Cloud" },
     { key: "d", label: "D", title: "Devices" },
   ];
   return (
     <Box component="nav" className="ws-rail" aria-label="Workspaces">
-      <UnstyledButton className="ws-rail-top" title="New workspace" aria-label="New workspace">
-        +
-      </UnstyledButton>
       <Stack gap="xs" align="center" className="ws-rail-list">
         {workspaces.map((w) => (
           <div key={w.key} className={`ws-avatar${w.active ? " active" : ""}`} title={w.title} aria-label={w.title}>
@@ -42,22 +39,6 @@ function WorkspaceRail() {
         </UnstyledButton>
       </Stack>
     </Box>
-  );
-}
-
-function ThemeToggle() {
-  const { setColorScheme } = useMantineColorScheme();
-  const computed = useComputedColorScheme("dark", { getInitialValueInEffect: true });
-  return (
-    <ActionIcon
-      variant="subtle"
-      color="gray"
-      onClick={() => setColorScheme(computed === "dark" ? "light" : "dark")}
-      aria-label="Toggle colour scheme"
-      title="Toggle dark / light"
-    >
-      🌓
-    </ActionIcon>
   );
 }
 
@@ -98,11 +79,14 @@ export default function App() {
   const [archiving, setArchiving] = useState<Set<string>>(() => new Set());
   const [removing, setRemoving] = useState<Set<string>>(() => new Set());
   const inFlight = useRef<Set<string>>(new Set());
-  const [modal, setModal] = useState<{ open: boolean; title: string; sections: ModalSection[] }>({
+  const [modal, setModal] = useState<{ open: boolean; title: string; sections: ModalSection[]; openInEditor?: () => void }>({
     open: false,
     title: "",
     sections: [],
   });
+  const [notes, setNotes] = useState<AppNotification[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [bellOpen, setBellOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirm, setConfirm] = useState<null | {
     title: string;
@@ -171,11 +155,25 @@ export default function App() {
     });
   }, []);
 
-  const openArtifacts = useCallback(async (files: string[]) => {
+  useEffect(() => {
+    return window.electronAPI.onNotification((n) => {
+      setNotes((prev) => [n, ...prev].slice(0, 100));
+      setUnread((u) => u + 1);
+    });
+  }, []);
+
+  const openArtifacts = useCallback(async (files: string[], repoPath: string) => {
     if (files.length === 0) return;
     const single = files.length === 1;
     const title = single ? (files[0] as string) : `${files.length} spec files`;
-    setModal({ open: true, title, sections: [{ label: "", body: "Loading…" }] });
+    const openInEditor = single
+      ? () => {
+          void window.electronAPI.openFile(repoPath, files[0] as string).then((res) => {
+            if (!res.ok) window.alert("Could not open file: " + res.error);
+          });
+        }
+      : undefined;
+    setModal({ open: true, title, sections: [{ label: "", body: "Loading…" }], openInEditor });
     try {
       const sections = await Promise.all(
         files.map(async (file) => {
@@ -189,9 +187,9 @@ export default function App() {
           return { label: capabilityOf(file), body: contents };
         })
       );
-      setModal({ open: true, title, sections });
+      setModal({ open: true, title, sections, openInEditor });
     } catch {
-      setModal({ open: true, title, sections: [{ label: "", body: "Could not read file." }] });
+      setModal({ open: true, title, sections: [{ label: "", body: "Could not read file." }], openInEditor });
     }
   }, []);
 
@@ -338,6 +336,28 @@ export default function App() {
     [applySelection]
   );
 
+  const onDeleteWorktree = useCallback(
+    (repoPath: string, branch: string | null) => {
+      setConfirm({
+        title: "Delete this worktree folder?",
+        detail: `This permanently deletes the folder at ${repoPath}${
+          branch ? ` (branch "${branch}")` : ""
+        } from disk. This cannot be undone.`,
+        warnings: ["Any uncommitted or unpushed work in this worktree will be lost."],
+        confirmLabel: "Delete folder",
+        run: async () => {
+          const res = await window.electronAPI.removeWorktree({ repoPath });
+          if (!res.ok) window.alert("Could not delete worktree: " + res.error);
+          else {
+            if (selection?.kind === "worktree" && selection.repoPath === repoPath) applySelection(null);
+            void refresh();
+          }
+        },
+      });
+    },
+    [applySelection, refresh, selection]
+  );
+
   const grouped = useMemo(() => {
     if (!status || "error" in status) return [];
     const visible = status.changes.filter((c) => !archived.has(keyOf(c)));
@@ -364,7 +384,7 @@ export default function App() {
   const statusText = refreshFailed
     ? "refresh failed — retrying"
     : status
-      ? `${changeCount} change(s) · ${repoCount} repo(s) · updated ${updatedAt}`
+      ? `${changeCount} change(s) · updated ${updatedAt}`
       : "connecting…";
 
   let main: React.ReactNode;
@@ -396,6 +416,7 @@ export default function App() {
         list={selectedGroup.worktrees}
         collapsed={false}
         onToggle={() => {}}
+        showToggle={false}
         openArtifacts={openArtifacts}
         onArchive={onArchive}
         archivingKeys={archiving}
@@ -435,11 +456,11 @@ export default function App() {
   }
 
   return (
-    <MantineProvider theme={theme} defaultColorScheme="auto">
+    <MantineProvider theme={theme} forceColorScheme="dark">
       <Group component="header" className="topbar" justify="space-between" wrap="nowrap" gap="md">
         <Group gap="xs" wrap="nowrap" className="topbar-brand">
-          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={26} height={26} />
-          <Title order={1} size="h4" style={{ margin: 0 }}>
+          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={40} height={40} />
+          <Title order={1} style={{ margin: 0, fontSize: "1.4rem" }}>
             Tentacles
           </Title>
         </Group>
@@ -452,14 +473,84 @@ export default function App() {
             rightSection={<kbd className="kbd">⌘K</kbd>}
             rightSectionWidth={52}
             aria-label="Search"
-            readOnly
           />
         </div>
         <Group gap="xs" wrap="nowrap">
-          <ThemeToggle />
-          <ActionIcon variant="subtle" color="gray" className="bell" title="Notifications" aria-label="Notifications">
-            🔔
-          </ActionIcon>
+          <Box style={{ position: "relative" }}>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              className="bell"
+              title="Notifications"
+              aria-label="Notifications"
+              style={{ position: "relative", overflow: "visible" }}
+              onClick={() => {
+                setBellOpen((o) => !o);
+                setUnread(0);
+              }}
+            >
+              🔔
+              {unread > 0 && (
+                <Badge
+                  color="magenta"
+                  size="xs"
+                  circle
+                  style={{ position: "absolute", top: -4, right: -4, pointerEvents: "none" }}
+                >
+                  {unread > 9 ? "9+" : unread}
+                </Badge>
+              )}
+            </ActionIcon>
+            {bellOpen && (
+              <>
+                <Box
+                  onClick={() => setBellOpen(false)}
+                  style={{ position: "fixed", inset: 0, zIndex: 200 }}
+                  aria-hidden
+                />
+                <Paper
+                  withBorder
+                  shadow="md"
+                  radius="md"
+                  data-notifications-panel
+                  style={{ position: "absolute", right: 0, top: "100%", marginTop: 6, width: 340, zIndex: 201 }}
+                >
+                  <Group justify="space-between" px="sm" py="xs" wrap="nowrap">
+                    <Text fw={700} size="sm">
+                      Notifications
+                    </Text>
+                    {notes.length > 0 && (
+                      <Button variant="subtle" size="compact-xs" color="gray" onClick={() => setNotes([])}>
+                        Clear
+                      </Button>
+                    )}
+                  </Group>
+                  <Divider />
+                  {notes.length === 0 ? (
+                    <Text c="dimmed" size="sm" p="sm">
+                      No notifications yet.
+                    </Text>
+                  ) : (
+                    <ScrollArea.Autosize mah={360}>
+                      <Stack gap={0} p="xs">
+                        {notes.map((n, i) => (
+                          <Box key={`${n.at}\u0000${i}`} data-notification py={6} px="xs">
+                            <Text size="sm" fw={600}>
+                              {n.title}
+                            </Text>
+                            <Text size="xs">{n.body}</Text>
+                            <Text size="xs" c="dimmed">
+                              {new Date(n.at).toLocaleTimeString()}
+                            </Text>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </ScrollArea.Autosize>
+                  )}
+                </Paper>
+              </>
+            )}
+          </Box>
           <ActionIcon variant="subtle" color="gray" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
             ⚙
           </ActionIcon>
@@ -488,6 +579,7 @@ export default function App() {
             onToggle={toggleRepo}
             onSelectRepo={selectRepo}
             onSelectWorktree={selectWorktree}
+            onDeleteWorktree={onDeleteWorktree}
           />
           <div
             className="sb-resize"
@@ -496,10 +588,15 @@ export default function App() {
             aria-label="Resize sidebar"
             onMouseDown={startResize}
           />
-          <main>{main}</main>
+          <main
+            key={selection ? (selection.kind === "repo" ? `r:${selection.repositoryId}` : `w:${selection.repoPath}`) : "none"}
+            className="panel-fade"
+          >
+            {main}
+          </main>
         </div>
       </div>
-      <Modal open={modal.open} title={modal.title} sections={modal.sections} onClose={closeModal} />
+      <Modal open={modal.open} title={modal.title} sections={modal.sections} onOpenInEditor={modal.openInEditor} onClose={closeModal} />
       <MantineModal
         opened={!!confirm}
         onClose={() => setConfirm(null)}

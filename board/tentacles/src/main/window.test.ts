@@ -53,7 +53,7 @@ describe("secure window creation", () => {
     expect(seen[0]?.show).toBe(true);
   });
 
-  it("opens the window at the wider default size (1440 x 860)", () => {
+  it("opens the window at the wider default size (1680 x 1040)", () => {
     const seen: Array<{ width?: unknown; height?: unknown }> = [];
     class FakeBrowserWindow {
       loadFile = vi.fn();
@@ -69,8 +69,8 @@ describe("secure window creation", () => {
       openExternal: vi.fn(),
     });
 
-    expect(seen[0]?.width).toBe(1440);
-    expect(seen[0]?.height).toBe(860);
+    expect(seen[0]?.width).toBe(1680);
+    expect(seen[0]?.height).toBe(1040);
   });
 
   it("creates a hidden window when show is false (e2e: no focus-stealing window)", () => {

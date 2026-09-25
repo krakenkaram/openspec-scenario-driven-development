@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Text } from "@mantine/core";
 import type { DiffFile, DiffResult } from "../shared/ipc-contract";
 import { highlightLine, languageForPath } from "./highlight";
@@ -73,13 +73,13 @@ function baseName(path: string): string {
 function DirLevel({
   node,
   depth,
-  sel,
+  selectedPath,
   onSelect,
 }: {
   node: DirNode;
   depth: number;
-  sel: number;
-  onSelect: (index: number) => void;
+  selectedPath: string | undefined;
+  onSelect: (path: string) => void;
 }) {
   const dirs = [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b));
   const files = [...node.files].sort((a, b) => baseName(a.file.path).localeCompare(baseName(b.file.path)));
@@ -100,19 +100,21 @@ function DirLevel({
             <div className="diff-tree-dir" style={{ paddingLeft: depth * 12 + 8 }} title={label}>
               {label}/
             </div>
-            <DirLevel node={current} depth={depth + 1} sel={sel} onSelect={onSelect} />
+            <DirLevel node={current} depth={depth + 1} selectedPath={selectedPath} onSelect={onSelect} />
           </div>
         );
       })}
       {files.map(({ file, index }) => (
         <button
           key={`${file.path}\u0000${index}`}
-          className={`diff-file-item ${index === sel ? "active" : ""}`}
+          className={`diff-file-item ${file.path === selectedPath ? "active" : ""}`}
           style={{ paddingLeft: depth * 12 + 8 }}
-          onClick={() => onSelect(index)}
+          onClick={() => onSelect(file.path)}
           title={file.path}
         >
-          <span className={`diff-status ${file.status}`}>{file.status}</span>
+          <span className={`diff-status diff-status-abbr ${file.status}`} title={file.status}>
+            {file.status.charAt(0)}
+          </span>
           <span className="diff-file-name">{baseName(file.path)}</span>
         </button>
       ))}
@@ -135,7 +137,7 @@ export function DiffView({
   getFullFile: (filePath: string) => Promise<DiffFile | null>;
   onOpenFile?: (filePath: string) => void;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [fullByPath, setFullByPath] = useState<Record<string, DiffFile>>({});
   const [treeWidth, setTreeWidth] = useState(240);
@@ -193,8 +195,12 @@ export function DiffView({
   }, [result]);
 
   const files = result && result.ok ? result.files : [];
-  const sel = files.length ? Math.min(selected, files.length - 1) : 0;
-  const current = files[sel];
+  const tree = useMemo(() => buildTree(files), [files]);
+  // Selection is keyed by path, not array index, so a live poll that adds or
+  // removes OTHER files never shifts which file is shown — the open file stays
+  // open until it is itself removed (then it falls back to the first file).
+  const current = files.find((f) => f.path === selectedPath) ?? files[0];
+  const currentPath = current?.path;
 
   const toggleExpand = async (path: string) => {
     if (expanded.has(path)) {
@@ -227,7 +233,7 @@ export function DiffView({
   return (
     <div className="diff-layout" ref={layoutRef}>
       <nav className="diff-sidebar" style={{ width: treeWidth, flex: "0 0 auto" }}>
-        <DirLevel node={buildTree(files)} depth={0} sel={sel} onSelect={setSelected} />
+        <DirLevel node={tree} depth={0} selectedPath={currentPath} onSelect={setSelectedPath} />
       </nav>
       <div
         className="diff-resize"

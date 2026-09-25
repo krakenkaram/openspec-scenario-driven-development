@@ -96,8 +96,6 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
           <span className="diff-tab">
             Files <b>{fileCount}</b>
           </span>
-          <span className="diff-tab">Checks</span>
-          <span className="diff-tab">Insights</span>
           <Button
             variant="light"
             color="magenta"
@@ -137,7 +135,7 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
         transitionProps={{ duration: 0 }}
         closeButtonProps={{ "aria-label": "Close" }}
       >
-        <div data-diff-overlay style={{ height: "82vh", display: "flex" }}>
+        <div data-diff-overlay className="diff-body" style={{ height: "82vh" }}>
           <DiffView result={result} getFullFile={getFullFile} onOpenFile={openFileExternally} />
         </div>
       </MantineModal>

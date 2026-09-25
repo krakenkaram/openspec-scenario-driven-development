@@ -1388,6 +1388,40 @@ function worktreeRunFrom(id: GitIdentity, repoPath: string): string {
   return id.commonDir ? path.dirname(id.commonDir) : path.resolve(repoPath);
 }
 
+// Delete a worktree folder outright (the sidebar bin button), independent of the
+// archive flow. Guarded like openWorktree: the target must be a currently
+// discovered repo/worktree, and the PRIMARY checkout is refused so the user can
+// never bin the main repository. Removal is `git worktree remove --force` (which
+// unregisters the worktree AND deletes its directory); if a leftover directory
+// remains — or the path was a standalone, non-linked checkout — the folder is
+// removed directly and stale worktree admin entries are pruned.
+export async function removeWorktreeFolder(
+  args: Args,
+  repoPath: string,
+  git: TeardownGit = realTeardownGit
+): Promise<OpenPathResult> {
+  const repos = discoverRepos(args);
+  const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
+  if (!okRepo) return { ok: false, error: "unknown repo or worktree" };
+
+  const top = (await gitToplevel(repoPath)) ?? path.resolve(repoPath);
+  const id = await resolveGitIdentity(top);
+  if (id.isPrimary) return { ok: false, error: "refusing to delete the primary checkout" };
+
+  const runFrom = worktreeRunFrom(id, top);
+  const removeError = await git.removeWorktree(runFrom, top, true);
+
+  if (fs.existsSync(top)) {
+    try {
+      fs.rmSync(top, { recursive: true, force: true });
+    } catch (e) {
+      return { ok: false, error: removeError || String(e) };
+    }
+  }
+  await runGitStep(runFrom, ["worktree", "prune"]);
+  return { ok: true };
+}
+
 // Guarded read: only a path resolving inside a currently-discovered repo.
 export function readArtifact(args: Args, fp: string): ReadFileResult {
   const repos = discoverRepos(args);
@@ -1828,6 +1862,7 @@ export default {
   archiveChange,
   planTeardown,
   executeArchiveWithTeardown,
+  removeWorktreeFolder,
   readArtifact,
   openWorktree,
   openRepoFile,

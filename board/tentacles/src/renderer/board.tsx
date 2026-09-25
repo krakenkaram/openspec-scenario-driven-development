@@ -40,11 +40,18 @@ const phaseIcon: Record<string, string> = {
 };
 
 function nodeStyle(tone: NodeTone): React.CSSProperties {
-  const base: React.CSSProperties = { borderRadius: 12, minWidth: 108, background: "var(--mantine-color-default)" };
-  if (tone === "done") return { ...base, border: "1px solid color-mix(in srgb, var(--mantine-color-teal-6) 55%, transparent)" };
+  const base: React.CSSProperties = { borderRadius: 12, minWidth: 98, background: "var(--mantine-color-default)" };
+  if (tone === "done")
+    return {
+      ...base,
+      background: "color-mix(in srgb, var(--mantine-color-teal-6) 16%, var(--mantine-color-default))",
+      border: "1px solid color-mix(in srgb, var(--mantine-color-teal-6) 55%, transparent)",
+    };
   if (tone === "progress")
     return {
       ...base,
+      background:
+        "linear-gradient(135deg, color-mix(in srgb, var(--mantine-color-magenta-6) 22%, var(--mantine-color-default)), color-mix(in srgb, var(--mantine-color-purple-6) 34%, var(--mantine-color-default)))",
       border: "1px solid var(--mantine-color-magenta-6)",
       boxShadow: "0 0 0 1px var(--mantine-color-magenta-6), 0 0 16px color-mix(in srgb, var(--mantine-color-magenta-6) 40%, transparent)",
     };
@@ -80,13 +87,13 @@ function Node({
 }) {
   if (onOpen) {
     return (
-      <UnstyledButton data-phase={phase} data-tone={tone} onClick={onOpen} style={nodeStyle(tone)}>
+      <UnstyledButton className="board-node" data-phase={phase} data-tone={tone} onClick={onOpen} style={nodeStyle(tone)}>
         <NodeBody phase={phase} state={state} tone={tone} />
       </UnstyledButton>
     );
   }
   return (
-    <Box data-phase={phase} data-tone={tone} style={nodeStyle(tone)}>
+    <Box className="board-node" data-phase={phase} data-tone={tone} style={nodeStyle(tone)}>
       <NodeBody phase={phase} state={state} tone={tone} />
     </Box>
   );
@@ -115,7 +122,7 @@ function PhaseNode({ p, openArtifacts }: { p: Phase; openArtifacts: (files: stri
   return (
     <Node
       phase={p.id}
-      state={p.done ? "✓ done" : "· pending"}
+      state={p.done ? "✓" : "· pending"}
       tone={p.done ? "done" : "pending"}
       onOpen={p.done && p.files.length ? () => openArtifacts(p.files) : undefined}
     />
@@ -154,7 +161,7 @@ function DoneNode({ c }: { c: Change }) {
     const state = c.pr.state === "MERGED" ? "✓ merged" : c.pr.state.toLowerCase();
     return (
       <Anchor
-        className="pr-node"
+        className="pr-node board-node"
         data-phase="done"
         data-tone={tone}
         href={c.pr.url}
@@ -182,7 +189,7 @@ function DoneNode({ c }: { c: Change }) {
 
 function Arrow() {
   return (
-    <Text c="dimmed" aria-hidden>
+    <Text c="dimmed" aria-hidden style={{ display: "flex", alignItems: "center" }}>
       →
     </Text>
   );
@@ -195,8 +202,16 @@ export function ChangeCard({
   onArchive,
   busy,
   removing,
-}: { c: Change; showBranch: boolean; onArchive: (c: Change) => void; busy: boolean; removing: boolean } & WithOpen) {
+}: {
+  c: Change;
+  showBranch: boolean;
+  onArchive: (c: Change) => void;
+  busy: boolean;
+  removing: boolean;
+  openArtifacts: (files: string[], repoPath: string) => void;
+}) {
   const reduceMotion = useReducedMotion();
+  const openArtifactsForCard = (files: string[]) => openArtifacts(files, c.repoPath);
   const statusBadge = c.complete ? (
     <Badge color="teal">COMPLETE</Badge>
   ) : c.review === "pending" ? (
@@ -261,6 +276,7 @@ export function ChangeCard({
         <Button
           variant="default"
           size="compact-xs"
+          style={{ marginLeft: "auto" }}
           onClick={async () => {
             const res = await window.electronAPI.openPath(c.repoPath);
             if (!res.ok) window.alert("Could not open folder: " + res.error);
@@ -279,7 +295,6 @@ export function ChangeCard({
             rel="noopener"
             color="magenta"
             size="compact-sm"
-            style={{ marginLeft: "auto" }}
             rightSection={<span aria-hidden>↗</span>}
           >
             Open in PR
@@ -290,11 +305,11 @@ export function ChangeCard({
         {c.phases.map((p, i) => (
           <Fragment key={p.id}>
             {i > 0 && <Arrow />}
-            <PhaseNode p={p} openArtifacts={openArtifacts} />
+            <PhaseNode p={p} openArtifacts={openArtifactsForCard} />
           </Fragment>
         ))}
         <Arrow />
-        <ApplyNode c={c} openArtifacts={openArtifacts} />
+        <ApplyNode c={c} openArtifacts={openArtifactsForCard} />
         <Arrow />
         <ReviewNode c={c} />
         <Arrow />
@@ -315,6 +330,7 @@ export function RepoGroup({
   onArchive,
   archivingKeys,
   removingKeys,
+  showToggle = true,
 }: {
   repositoryId: string;
   repositoryName: string;
@@ -325,19 +341,26 @@ export function RepoGroup({
   onArchive: (c: Change) => void;
   archivingKeys: Set<string>;
   removingKeys: Set<string>;
-} & WithOpen) {
+  showToggle?: boolean;
+  openArtifacts: (files: string[], repoPath: string) => void;
+}) {
   const done = list.filter((c) => c.complete).length;
+  const heading = (
+    <Group gap="xs">
+      {showToggle && <Text c="dimmed">{collapsed ? "▶" : "▼"}</Text>}
+      <Text fw={700}>{repositoryName}</Text>
+      <Text size="sm" c="dimmed">
+        {list.length} change(s) · {done} complete
+      </Text>
+    </Group>
+  );
   return (
     <Stack gap="sm">
-      <UnstyledButton onClick={() => onToggle(repositoryId)}>
-        <Group gap="xs">
-          <Text c="dimmed">{collapsed ? "▶" : "▼"}</Text>
-          <Text fw={700}>{repositoryName}</Text>
-          <Text size="sm" c="dimmed">
-            {list.length} change(s) · {done} complete
-          </Text>
-        </Group>
-      </UnstyledButton>
+      {showToggle ? (
+        <UnstyledButton onClick={() => onToggle(repositoryId)}>{heading}</UnstyledButton>
+      ) : (
+        heading
+      )}
       {!collapsed && (
         <Stack gap="sm">
           {list.map((c) => {

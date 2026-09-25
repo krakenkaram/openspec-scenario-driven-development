@@ -745,3 +745,49 @@ describe("the inline diff separates hunks with a header row", () => {
     ]);
   });
 });
+
+
+describe("the open file stays selected across live refreshes", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("does not switch the shown file when another file is added on a poll", async () => {
+    vi.useFakeTimers();
+    const v1 = {
+      ok: true as const,
+      files: [
+        { path: "src/b.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "bbb" }] }] },
+        { path: "src/c.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "ccc" }] }] },
+      ],
+    };
+    // A poll where src/a.ts is added — it sorts (and indexes) before the open file.
+    const v2 = {
+      ok: true as const,
+      files: [
+        { path: "src/a.ts", status: "added" as const, hunks: [{ lines: [{ kind: "add" as const, text: "aaa" }] }] },
+        { path: "src/b.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "bbb" }] }] },
+        { path: "src/c.ts", status: "modified" as const, hunks: [{ lines: [{ kind: "add" as const, text: "ccc" }] }] },
+      ],
+    };
+    const getDiff = vi.fn().mockResolvedValueOnce(v1).mockResolvedValue(v2);
+    mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus([worktreeChange()])), getDiff });
+
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByTitle(LEAF));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // open src/c.ts in the tree
+    fireEvent.click(screen.getByTitle("src/c.ts"));
+    expect((document.querySelector(".diff-file-head") as HTMLElement).textContent).toContain("src/c.ts");
+
+    // a poll adds src/a.ts — the open file must stay src/c.ts, not switch
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect((document.querySelector(".diff-file-head") as HTMLElement).textContent).toContain("src/c.ts");
+  });
+});

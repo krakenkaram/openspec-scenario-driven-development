@@ -119,7 +119,9 @@
 .diff-resize { flex:0 0 5px; cursor:col-resize; background:var(--border); opacity:.5; }
 .diff-resize:hover { opacity:1; background:var(--accent); }
 .diff-status { text-transform:uppercase; font-size:0.66rem; letter-spacing:0.04em; padding:1px 6px; border-radius:4px; border:1px solid var(--border); color:var(--muted); }
+.diff-status.diff-status-abbr { flex:0 0 auto; min-width:1.4em; padding:1px 0; text-align:center; font-weight:700; letter-spacing:0; }
 .diff-status.added { color:var(--done); border-color:var(--done); }
+.diff-status.modified { color:#79c0ff; border-color:#79c0ff; }
 .diff-status.deleted { color:#f87171; border-color:#f87171; }
 .diff-status.renamed, .diff-status.binary { color:var(--warn); border-color:var(--warn); }
 .diff-hunk { border-bottom:1px solid var(--border); }
@@ -171,3 +173,22 @@
 .markdown-body table { border-collapse:collapse; margin:0.8em 0; font-size:0.9em; }
 .markdown-body th, .markdown-body td { border:1px solid var(--border); padding:6px 10px; text-align:left; }
 .markdown-body blockquote { margin:0.6em 0; padding-left:1em; border-left:3px solid var(--border); color:var(--muted); }
+
+/* Interaction polish: smooth hover feedback and a gentle fade when the main
+   panel content changes (selecting a repository or worktree). Motion is gated on
+   the reduced-motion preference. */
+.board-node { transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease; }
+button.board-node:hover, a.board-node:hover { transform: translateY(-1px); filter: brightness(1.12); }
+
+[data-repo-row], [data-worktree-leaf] { transition: background-color 120ms ease; }
+[data-repo-row]:hover, [data-worktree-leaf]:hover { background-color: color-mix(in srgb, var(--fg) 8%, transparent); }
+
+.ws-avatar { transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease; }
+.ws-avatar:hover { transform: translateY(-1px); filter: brightness(1.1); }
+
+.diff-file-item { transition: background-color 120ms ease, color 120ms ease; }
+
+@keyframes panel-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .panel-fade { animation: panel-fade-in 160ms ease; }
+}

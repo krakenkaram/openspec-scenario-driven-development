@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's eighteen
+// Type-only IPC contract: the single source of truth for the board's nineteen
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -75,6 +75,11 @@ export type StatusResult = StatusOk | StatusError;
 export interface ArchiveArgs {
   repoPath: string;
   change: string;
+}
+// Delete a worktree folder outright (the sidebar bin button), independent of the
+// archive flow. Only the worktree path is needed; the guard runs main-side.
+export interface RemoveWorktreeArgs {
+  repoPath: string;
 }
 // Execute an archive that may tear down the worktree. The acceptances carry the
 // user's answer to the single confirmation's enumerated warnings.
@@ -249,6 +254,7 @@ export interface ChannelMap {
   archive: "board:archive";
   archivePlan: "board:archivePlan";
   archiveExecute: "board:archiveExecute";
+  removeWorktree: "board:removeWorktree";
   getSettings: "board:getSettings";
   setSettings: "board:setSettings";
   chooseDirectory: "board:chooseDirectory";
@@ -264,12 +270,23 @@ export interface ChannelMap {
 
 export type Channel = ChannelMap[keyof ChannelMap];
 
-// Main → renderer push channels (webContents.send). Unlike the invoke channels
-// above these carry no payload and expect no reply; the renderer subscribes via
+// A completion notification as the renderer records it for the in-app bell list:
+// the same title/body the OS banner carries, plus the epoch-ms time it fired so
+// the list can order and timestamp entries.
+export interface AppNotification {
+  title: string;
+  body: string;
+  at: number;
+}
+
+// Main → renderer push channels (webContents.send). The renderer subscribes via
 // the ElectronAPI surface. notificationSound tells the renderer to play the
-// bundled completion sound, fired only when a banner is shown with sound.
+// bundled completion sound, fired only when a banner is shown with sound;
+// notification carries an AppNotification payload for the in-app bell list, fired
+// for every banner shown (audible or silent, never when muted).
 export interface EventChannelMap {
   notificationSound: "board:notificationSound";
+  notification: "board:notification";
 }
 
 export type EventChannel = EventChannelMap[keyof EventChannelMap];
@@ -286,6 +303,9 @@ export interface ElectronAPI {
   // confirmation), and execute an archive-with-teardown carrying the acceptances.
   archivePlan(payload: ArchiveArgs): Promise<TeardownPlan>;
   archiveExecute(payload: ArchiveExecuteArgs): Promise<ArchiveExecuteResult>;
+  // Permanently delete a worktree folder (git worktree remove --force + rm the
+  // dir). Guarded main-side: only a discovered, non-primary worktree.
+  removeWorktree(payload: RemoveWorktreeArgs): Promise<OpenPathResult>;
   getSettings(): Promise<BoardSettings>;
   setSettings(payload: SetSettingsArgs): Promise<SetSettingsResult>;
   chooseDirectory(): Promise<ChooseDirectoryResult>;
@@ -295,6 +315,9 @@ export interface ElectronAPI {
   // against the repo's git top-level and guards containment (see openRepoFile).
   openFile(repoPath: string, filePath: string): Promise<OpenPathResult>;
   onNotificationSound(handler: () => void): () => void;
+  // Subscribe to completion notifications for the in-app bell list. The handler
+  // receives each notification's title/body/time; returns an unsubscribe.
+  onNotification(handler: (n: AppNotification) => void): () => void;
   install(payload: InstallArgs): Promise<InstallResult>;
   doctor(payload: DoctorArgs): Promise<DoctorResult>;
   // The available OpenSpec schemas (name, description, ordered steps), for the
