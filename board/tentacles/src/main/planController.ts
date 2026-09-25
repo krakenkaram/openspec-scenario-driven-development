@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { AgentRunner, AgentSession } from "./agentRunner";
 import type { PlanController } from "./wiring";
 import type {
@@ -26,9 +28,15 @@ export function makePlanController(runner: AgentRunner, pushTurn: (turn: PlanTur
       return { ok: true };
     },
 
-    async newRefinement(_folderPath: string): Promise<NewRefinementResult> {
+    async newRefinement(folderPath: string): Promise<NewRefinementResult> {
       session?.stop();
       session = null;
+      try {
+        const ticket = path.join(folderPath, ".tentacles", "TICKET.html");
+        if (fs.existsSync(ticket)) fs.rmSync(ticket);
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
       return { ok: true };
     },
   };

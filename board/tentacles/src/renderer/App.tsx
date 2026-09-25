@@ -476,7 +476,16 @@ export default function App() {
             <main>{main}</main>
           </div>
         )}
-        {activePhase === "plan" && <PlanView />}
+        <div
+          className="plan-host"
+          style={{
+            display: activePhase === "plan" ? "flex" : "none",
+            flex: activePhase === "plan" ? 1 : undefined,
+            minWidth: 0,
+          }}
+        >
+          <PlanView />
+        </div>
         {activePhase === "release" && (
           <Center data-testid="release-phase" p="xl" style={{ flex: 1 }}>
             <Text c="dimmed">Release — coming soon.</Text>

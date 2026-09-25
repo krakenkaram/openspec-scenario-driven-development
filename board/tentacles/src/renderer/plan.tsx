@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Button, Group, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
+import { Box, Button, Group, Modal as MantineModal, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
 import type { PlanTurn } from "../shared/ipc-contract";
 
 function KiroEngineBadge() {
@@ -40,6 +40,7 @@ export function PlanView() {
   const [idea, setIdea] = useState("");
   const [turns, setTurns] = useState<PlanTurn[]>([]);
   const [started, setStarted] = useState(false);
+  const [confirmNew, setConfirmNew] = useState(false);
 
   useEffect(() => {
     return window.electronAPI.onPlanTurn((turn) => {
@@ -50,6 +51,21 @@ export function PlanView() {
   const browse = async () => {
     const res = await window.electronAPI.chooseDirectory();
     if (res.path) setFolderPath(res.path);
+  };
+
+  const openTicket = () => {
+    if (!folderPath) return;
+    void window.electronAPI.openPath(`${folderPath}/.tentacles/TICKET.html`);
+  };
+
+  const confirmNewRefinement = async () => {
+    const fp = folderPath;
+    setConfirmNew(false);
+    if (fp) await window.electronAPI.newRefinement(fp);
+    setStarted(false);
+    setTurns([]);
+    setFolderPath(null);
+    setIdea("");
   };
 
   const send = async () => {
@@ -103,6 +119,14 @@ export function PlanView() {
         </Stack>
       ) : (
         <Stack p="md" gap="sm" className="plan-chat" style={{ flex: 1, minHeight: 0 }}>
+          <Group justify="flex-end" className="plan-toolbar">
+            <Button variant="default" size="xs" onClick={openTicket}>
+              Open ticket
+            </Button>
+            <Button variant="default" size="xs" color="red" onClick={() => setConfirmNew(true)}>
+              New refinement
+            </Button>
+          </Group>
           <ScrollArea style={{ flex: 1 }} className="plan-chat-scroll">
             <Stack gap="xs">
               {turns.map((t, i) => (
@@ -126,6 +150,27 @@ export function PlanView() {
           </Group>
         </Stack>
       )}
+
+      <MantineModal
+        opened={confirmNew}
+        onClose={() => setConfirmNew(false)}
+        title="Start a new refinement?"
+        transitionProps={{ duration: 0 }}
+        closeButtonProps={{ "aria-label": "Close" }}
+      >
+        <Text mb="md">
+          This deletes the current ticket (<code>.tentacles/TICKET.html</code>) and starts over. Your
+          <code> .tentacles/*.md</code> docs are kept. This cannot be undone.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setConfirmNew(false)}>
+            Cancel
+          </Button>
+          <Button color="red" onClick={() => void confirmNewRefinement()}>
+            Discard ticket and start over
+          </Button>
+        </Group>
+      </MantineModal>
     </Stack>
   );
 }

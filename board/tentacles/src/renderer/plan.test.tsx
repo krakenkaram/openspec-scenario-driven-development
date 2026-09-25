@@ -128,3 +128,77 @@ describe("PLAN — the docs step is relayed by the agent, not refereed by the ap
     expect(screen.getByRole("button", { name: /choose folder/i })).toBeInTheDocument();
   });
 });
+
+describe("PLAN — the ticket can be opened", () => {
+  it("offers to open the ticket at the conventional path in the picked folder", async () => {
+    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: /open ticket/i }));
+
+    expect(api.openPath).toHaveBeenCalledWith("/Code/my-proj/.tentacles/TICKET.html");
+  });
+});
+
+describe("PLAN — new refinement warns then resets", () => {
+  it("cancelling the warning keeps the chat and wipes nothing", async () => {
+    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: "New refinement" }));
+    expect(await screen.findByText(/cannot be undone/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(api.newRefinement).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/your reply/i)).toBeInTheDocument();
+  });
+
+  it("confirming wipes the ticket and returns to the folder picker", async () => {
+    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: "New refinement" }));
+    await user.click(await screen.findByRole("button", { name: /discard ticket and start over/i }));
+
+    await waitFor(() => expect(api.newRefinement).toHaveBeenCalledWith("/Code/my-proj"));
+    expect(await screen.findByRole("button", { name: /choose folder/i })).toBeInTheDocument();
+  });
+});
+
+describe("PLAN — the session is ephemeral but survives phase switches", () => {
+  it("keeps the chat when leaving PLAN and returning", async () => {
+    const chan = planTurnChannel();
+    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    act(() => chan.emit({ speaker: "BA", text: "a question" }));
+    expect(await screen.findByText("a question")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "BUILD" }));
+    await user.click(screen.getByRole("button", { name: "PLAN" }));
+
+    expect(screen.getByText("a question")).toBeInTheDocument();
+  });
+
+  it("shows a turn that arrived while the user was on another phase", async () => {
+    const chan = planTurnChannel();
+    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: "BUILD" }));
+    act(() => chan.emit({ speaker: "QA", text: "late question" }));
+    await user.click(screen.getByRole("button", { name: "PLAN" }));
+
+    expect(await screen.findByText("late question")).toBeInTheDocument();
+  });
+});
