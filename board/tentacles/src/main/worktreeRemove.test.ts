@@ -80,6 +80,37 @@ describe("removeWorktreeFolder — delete a worktree folder outright", () => {
     if (!res.ok) expect(res.error).toMatch(/unknown repo or worktree/i);
   });
 
+  it("refuses when the git top-level is an ANCESTOR of the selected folder (nested project)", async () => {
+    const primary = seedPrimary();
+    const wt = addLinkedWorktree(primary, "feat/x", "add-x");
+    // A nested project: its openspec/ lives in a subdir of the worktree, so the
+    // discovered repo (nestedProj) is NOT the git top-level (wt). Deleting the
+    // top-level would nuke the whole worktree the user never named.
+    const nestedProj = path.join(wt, "proj");
+    fs.mkdirSync(path.join(nestedProj, "openspec", "changes"), { recursive: true });
+    const args: Args = { repos: [primary, nestedProj], root: "/nonexistent", depth: 1 };
+
+    const res = await core.removeWorktreeFolder(args, nestedProj);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/does not match the selected folder/i);
+    expect(fs.existsSync(wt)).toBe(true); // the ancestor worktree was NOT deleted
+    expect(fs.existsSync(nestedProj)).toBe(true);
+  });
+
+  it("surfaces git's error for a locked worktree instead of force-deleting it", async () => {
+    const primary = seedPrimary();
+    const wt = addLinkedWorktree(primary, "feat/locked", "add-locked");
+    git(primary, ["worktree", "lock", wt]);
+    const args: Args = { repos: [primary, wt], root: "/nonexistent", depth: 1 };
+
+    const res = await core.removeWorktreeFolder(args, wt);
+
+    expect(res.ok).toBe(false); // git refused; we did not bypass the lock
+    expect(fs.existsSync(wt)).toBe(true); // the locked worktree survives
+    git(primary, ["worktree", "unlock", wt]); // let afterAll clean up
+  });
+
   it("operates on the matched worktree, never a symlink/.. alias of the renderer path", async () => {
     const primary = seedPrimary();
     const wt = addLinkedWorktree(primary, "feat/x", "add-x");

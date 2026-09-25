@@ -1390,11 +1390,11 @@ function worktreeRunFrom(id: GitIdentity, repoPath: string): string {
 
 // Delete a worktree folder outright (the sidebar bin button), independent of the
 // archive flow. Guarded like openWorktree: the target must be a currently
-// discovered repo/worktree, and the PRIMARY checkout is refused so the user can
-// never bin the main repository. Removal is `git worktree remove --force` (which
-// unregisters the worktree AND deletes its directory); if a leftover directory
-// remains — or the path was a standalone, non-linked checkout — the folder is
-// removed directly and stale worktree admin entries are pruned.
+// discovered repo/worktree, its git top-level must equal the selected folder (so
+// a nested layout can't delete an ancestor), and the PRIMARY checkout is refused
+// so the user can never bin the main repository. Removal is `git worktree remove
+// --force`; if git refuses (e.g. a locked worktree) the error is surfaced rather
+// than force-deleting past git's protection.
 export async function removeWorktreeFolder(
   args: Args,
   repoPath: string,
@@ -1410,28 +1410,44 @@ export async function removeWorktreeFolder(
   const matched = path.resolve(match);
 
   const top = (await gitToplevel(matched)) ?? matched;
+  // The confirmation dialog names exactly the selected folder (repoPath). Only
+  // proceed when the git top-level IS that folder, so a nested-project layout can
+  // never resolve `top` to an ANCESTOR and delete sibling projects the user was
+  // never shown. Compare canonical realpaths (gitToplevel resolves symlinks; a
+  // bare path.resolve does not, e.g. /tmp -> /private/tmp on macOS). Refuse rather
+  // than silently widen the blast radius.
+  const canonical = (p: string): string => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  if (canonical(top) !== canonical(matched)) {
+    return { ok: false, error: "refusing to delete: the git worktree root does not match the selected folder" };
+  }
   const id = await resolveGitIdentity(top);
   if (id.isPrimary) return { ok: false, error: "refusing to delete the primary checkout" };
 
   const runFrom = worktreeRunFrom(id, top);
   const removeError = await git.removeWorktree(runFrom, top, true);
-
-  let fellBack = false;
+  // `git worktree remove --force` already removes a DIRTY worktree, so a remaining
+  // error means git refused for a protective reason (e.g. a locked worktree). Do
+  // NOT bypass that with a blind recursive delete — surface the error so the user
+  // can unlock/resolve first.
+  if (removeError) {
+    return { ok: false, error: removeError };
+  }
+  // On success git has deleted the directory; clean up any residual, then prune
+  // the now-removed worktree's admin entry.
   if (fs.existsSync(top)) {
     try {
       fs.rmSync(top, { recursive: true, force: true });
-      fellBack = true;
     } catch (e) {
-      return { ok: false, error: removeError || String(e) };
+      return { ok: false, error: String(e) };
     }
   }
-  const pruneError = await runGitStep(runFrom, ["worktree", "prune"]);
-  // A direct deletion after a FAILED git removal leaves stale worktree admin that
-  // only `prune` clears; if that prune also failed, the worktree list still points
-  // at a folder that no longer exists, so report the partial failure.
-  if (removeError && fellBack && pruneError) {
-    return { ok: false, error: removeError };
-  }
+  await runGitStep(runFrom, ["worktree", "prune"]);
   return { ok: true };
 }
 

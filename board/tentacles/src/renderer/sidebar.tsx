@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionIcon, Badge, Box, Group, Loader, Paper, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
 import type { RepositoryGroup } from "../shared/ipc-contract";
 import { worktreeLeaves, worktreeStatus, worktreeDirName, type WorktreeLeaf } from "./worktrees";
@@ -61,6 +61,15 @@ function SidebarLeaf({
 }) {
   const completed = worktreeStatus(leaf.changes) === "completed";
   const [menuOpen, setMenuOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (menuOpen) itemRef.current?.focus();
+  }, [menuOpen]);
+  const closeMenu = () => {
+    setMenuOpen(false);
+    triggerRef.current?.focus();
+  };
   return (
     <Box style={{ position: "relative" }}>
       <UnstyledButton
@@ -93,6 +102,7 @@ function SidebarLeaf({
         </Stack>
       </UnstyledButton>
       <ActionIcon
+        ref={triggerRef}
         data-worktree-menu
         variant="subtle"
         color="gray"
@@ -127,9 +137,16 @@ function SidebarLeaf({
             radius="md"
             role="menu"
             className="wt-menu"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                closeMenu();
+              }
+            }}
             style={{ position: "absolute", right: 6, top: "calc(50% + 12px)", zIndex: 201, minWidth: 168 }}
           >
             <UnstyledButton
+              ref={itemRef}
               role="menuitem"
               className="wt-menu-item"
               onClick={(e) => {
