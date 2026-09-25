@@ -79,4 +79,26 @@ describe("removeWorktreeFolder — delete a worktree folder outright", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/unknown repo or worktree/i);
   });
+
+  it("operates on the matched worktree, never a symlink/.. alias of the renderer path", async () => {
+    const primary = seedPrimary();
+    const wt = addLinkedWorktree(primary, "feat/x", "add-x");
+    const victim = addLinkedWorktree(primary, "feat/victim", "keep-me");
+    const args: Args = { repos: [primary, wt, victim], root: "/nonexistent", depth: 1 };
+
+    // A renderer path that path.resolve() collapses to `wt` (so it clears the
+    // lexical guard) but whose on-disk resolution follows the symlink first and
+    // lands inside `victim`. Passing this raw string to git would target victim;
+    // the guard must use the matched discovered root instead.
+    fs.mkdirSync(path.join(victim, "inner"));
+    fs.symlinkSync(path.join(victim, "inner"), path.join(wt, "sneak"));
+    const aliased = path.join(wt, "sneak", "..");
+
+    const res = await core.removeWorktreeFolder(args, aliased);
+
+    expect(res).toEqual({ ok: true });
+    expect(fs.existsSync(wt)).toBe(false); // the matched worktree was removed
+    expect(fs.existsSync(victim)).toBe(true); // the symlink-alias target was untouched
+    expect(gitOut(primary, ["worktree", "list"])).toContain(victim);
+  });
 });

@@ -195,7 +195,13 @@ export function DiffView({
   }, [result]);
 
   const files = result && result.ok ? result.files : [];
-  const tree = useMemo(() => buildTree(files), [files]);
+  // Electron structured-clones each IPC response, so `files` is a new array every
+  // 3s poll. Key the memo on the tree-relevant data (ordered path+status) instead,
+  // so the tree only rebuilds when the file set or a status actually changes — not
+  // on every poll. The expanded-file refresh effect above still keys on `result`.
+  const treeKey = files.map((f) => `${f.path}\u0000${f.status}`).join("\u0001");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tree = useMemo(() => buildTree(files), [treeKey]);
   // Selection is keyed by path, not array index, so a live poll that adds or
   // removes OTHER files never shifts which file is shown — the open file stays
   // open until it is itself removed (then it falls back to the first file).

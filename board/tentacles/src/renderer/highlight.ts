@@ -71,19 +71,29 @@ export function languageForPath(path: string): string | null {
 // stays XSS-safe.
 const highlightCache = new Map<string, string>();
 const HIGHLIGHT_CACHE_MAX = 5000;
+// Skip caching very long lines (e.g. minified bundles): the key holds the whole
+// source line and the value its highlighted HTML, so caching unbounded-length
+// lines would let a few of them dominate retained memory in this long-running,
+// polling app. They are still highlighted, just never stored.
+const HIGHLIGHT_MAX_LINE = 2000;
 
 export function highlightLine(text: string, language: string | null): string | null {
   if (!language) return null;
+  const cacheable = text.length <= HIGHLIGHT_MAX_LINE;
   const key = `${language}\u0000${text}`;
-  const cached = highlightCache.get(key);
-  if (cached !== undefined) return cached;
+  if (cacheable) {
+    const cached = highlightCache.get(key);
+    if (cached !== undefined) return cached;
+  }
   let value: string;
   try {
     value = hljs.highlight(text, { language, ignoreIllegals: true }).value;
   } catch {
     return null;
   }
-  if (highlightCache.size >= HIGHLIGHT_CACHE_MAX) highlightCache.clear();
-  highlightCache.set(key, value);
+  if (cacheable) {
+    if (highlightCache.size >= HIGHLIGHT_CACHE_MAX) highlightCache.clear();
+    highlightCache.set(key, value);
+  }
   return value;
 }

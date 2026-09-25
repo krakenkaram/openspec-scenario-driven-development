@@ -1401,24 +1401,37 @@ export async function removeWorktreeFolder(
   git: TeardownGit = realTeardownGit
 ): Promise<OpenPathResult> {
   const repos = discoverRepos(args);
-  const okRepo = repos.some((r) => path.resolve(r) === path.resolve(repoPath || ""));
-  if (!okRepo) return { ok: false, error: "unknown repo or worktree" };
+  // Match the renderer-supplied path to a discovered root, then operate ONLY on
+  // the matched main-process path — never the renderer string. A lexically-equal
+  // but non-canonical input (e.g. `<root>/link/..`) must never be the path git and
+  // the force-removal actually resolve (ADR-0002), mirroring openWorktree.
+  const match = repos.find((r) => path.resolve(r) === path.resolve(repoPath || ""));
+  if (!match) return { ok: false, error: "unknown repo or worktree" };
+  const matched = path.resolve(match);
 
-  const top = (await gitToplevel(repoPath)) ?? path.resolve(repoPath);
+  const top = (await gitToplevel(matched)) ?? matched;
   const id = await resolveGitIdentity(top);
   if (id.isPrimary) return { ok: false, error: "refusing to delete the primary checkout" };
 
   const runFrom = worktreeRunFrom(id, top);
   const removeError = await git.removeWorktree(runFrom, top, true);
 
+  let fellBack = false;
   if (fs.existsSync(top)) {
     try {
       fs.rmSync(top, { recursive: true, force: true });
+      fellBack = true;
     } catch (e) {
       return { ok: false, error: removeError || String(e) };
     }
   }
-  await runGitStep(runFrom, ["worktree", "prune"]);
+  const pruneError = await runGitStep(runFrom, ["worktree", "prune"]);
+  // A direct deletion after a FAILED git removal leaves stale worktree admin that
+  // only `prune` clears; if that prune also failed, the worktree list still points
+  // at a folder that no longer exists, so report the partial failure.
+  if (removeError && fellBack && pruneError) {
+    return { ok: false, error: removeError };
+  }
   return { ok: true };
 }
 
