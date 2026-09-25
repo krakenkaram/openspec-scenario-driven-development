@@ -18,6 +18,7 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
   const [result, setResult] = useState<DiffResult | null>(null);
   const [staleRefresh, setStaleRefresh] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const hasGood = useRef(false);
   const reqGen = useRef(0);
 
@@ -91,11 +92,11 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
             </Text>
           )}
         </Group>
-        <Group gap={4} wrap="nowrap" className="diff-tabs">
-          <span className="diff-tab active">Changes</span>
-          <span className="diff-tab">
-            Files <b>{fileCount}</b>
-          </span>
+        <Group gap={8} wrap="nowrap" className="diff-tabs">
+          <span className="diff-tab active">Files</span>
+          <Badge size="sm" variant="light" color="gray">
+            {fileCount}
+          </Badge>
           <Button
             variant="light"
             color="magenta"
@@ -107,11 +108,28 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
           </Button>
         </Group>
       </Group>
-      <div className="diff-body">
+      <div className={`diff-body${result ? " panel-fade" : ""}`}>
         <DiffView result={result} getFullFile={getFullFile} onOpenFile={openFileExternally} />
       </div>
       <div className="ai-review">
-        <Group gap="xs" wrap="nowrap">
+        <Group
+          gap="xs"
+          wrap="nowrap"
+          role="button"
+          tabIndex={0}
+          aria-expanded={reviewOpen}
+          onClick={() => setReviewOpen((o) => !o)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setReviewOpen((o) => !o);
+            }
+          }}
+          style={{ cursor: "pointer" }}
+        >
+          <Text aria-hidden c="dimmed">
+            {reviewOpen ? "▾" : "▸"}
+          </Text>
           <Text aria-hidden>✨</Text>
           <Text fw={600} size="sm">
             AI Review Summary
@@ -123,9 +141,11 @@ export function DiffPanel({ repoPath }: { repoPath: string }) {
             No review has run yet
           </Badge>
         </Group>
-        <Text size="xs" c="dimmed" mt={4}>
-          An automated review summary will appear here once a review has run on this branch.
-        </Text>
+        {reviewOpen && (
+          <Text size="xs" c="dimmed" mt={4}>
+            An automated review summary will appear here once a review has run on this branch.
+          </Text>
+        )}
       </div>
       <MantineModal
         opened={overlayOpen}

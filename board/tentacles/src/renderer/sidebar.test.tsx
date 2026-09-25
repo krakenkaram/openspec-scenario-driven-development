@@ -344,7 +344,8 @@ describe("worktree delete (bin) button", () => {
     const wc = (await screen.findByText("wings-core")).closest("[data-repo]") as HTMLElement;
     await user.click(within(wc).getByRole("button", { name: /expand repository/i }));
 
-    await user.click(within(wc).getByRole("button", { name: /delete worktree feat-a/i }));
+    await user.click(within(wc).getByRole("button", { name: /worktree actions for feat-a/i }));
+    await user.click(await screen.findByRole("menuitem", { name: /delete worktree/i }));
 
     await screen.findByText("Delete this worktree folder?");
     await user.click(screen.getByRole("button", { name: "Delete folder" }));
@@ -360,7 +361,8 @@ describe("worktree delete (bin) button", () => {
     const wc = (await screen.findByText("wings-core")).closest("[data-repo]") as HTMLElement;
     await user.click(within(wc).getByRole("button", { name: /expand repository/i }));
 
-    await user.click(within(wc).getByRole("button", { name: /delete worktree feat-a/i }));
+    await user.click(within(wc).getByRole("button", { name: /worktree actions for feat-a/i }));
+    await user.click(await screen.findByRole("menuitem", { name: /delete worktree/i }));
     await screen.findByText("Delete this worktree folder?");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -368,19 +370,19 @@ describe("worktree delete (bin) button", () => {
   });
 });
 
-describe("the search boxes accept typed text", () => {
-  it("lets the user type into the sidebar and top-bar search fields", async () => {
+describe("the sidebar repository search", () => {
+  it("accepts typed text and filters the repository list", async () => {
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText("wings-core");
+    expect(screen.getByText("lonely")).toBeTruthy();
 
     const sidebarSearch = screen.getByLabelText("Search repositories") as HTMLInputElement;
     await user.type(sidebarSearch, "wings");
     expect(sidebarSearch.value).toBe("wings");
 
-    const topSearch = screen.getByLabelText("Search") as HTMLInputElement;
-    await user.type(topSearch, "spec");
-    expect(topSearch.value).toBe("spec");
+    expect(screen.getByText("wings-core")).toBeTruthy();
+    expect(screen.queryByText("lonely")).toBeNull();
   });
 });

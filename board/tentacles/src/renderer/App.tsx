@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionIcon, Badge, Box, Button, Center, Divider, Group, List, MantineProvider, Modal as MantineModal, Paper, ScrollArea, Stack, Text, TextInput, Title, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Box, Button, Center, Divider, Group, List, Loader, MantineProvider, Modal as MantineModal, Paper, ScrollArea, Stack, Text, Title, UnstyledButton } from "@mantine/core";
 import type { AppNotification, Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -390,8 +390,8 @@ export default function App() {
   let main: React.ReactNode;
   if (!status) {
     main = (
-      <Center p="xl">
-        <Text c="dimmed">Loading…</Text>
+      <Center p="xl" style={{ height: "100%" }}>
+        <Loader color="magenta" size="lg" />
       </Center>
     );
   } else if ("error" in status) {
@@ -459,22 +459,11 @@ export default function App() {
     <MantineProvider theme={theme} forceColorScheme="dark">
       <Group component="header" className="topbar" justify="space-between" wrap="nowrap" gap="md">
         <Group gap="xs" wrap="nowrap" className="topbar-brand">
-          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={40} height={40} />
-          <Title order={1} style={{ margin: 0, fontSize: "1.4rem" }}>
+          <img className="brand-logo" src={logoUrl} alt="Tentacles" width={48} height={48} />
+          <Title order={1} style={{ margin: 0, fontSize: "1.2rem" }}>
             Tentacles
           </Title>
         </Group>
-        <div className="topbar-search">
-          <TextInput
-            variant="filled"
-            radius="md"
-            placeholder="Search repositories, specs, issues…"
-            leftSection={<span aria-hidden>🔍</span>}
-            rightSection={<kbd className="kbd">⌘K</kbd>}
-            rightSectionWidth={52}
-            aria-label="Search"
-          />
-        </div>
         <Group gap="xs" wrap="nowrap">
           <Box style={{ position: "relative" }}>
             <ActionIcon
@@ -490,15 +479,28 @@ export default function App() {
               }}
             >
               🔔
-              {unread > 0 && (
-                <Badge
-                  color="magenta"
-                  size="xs"
-                  circle
-                  style={{ position: "absolute", top: -4, right: -4, pointerEvents: "none" }}
+              {notes.length > 0 && (
+                <Box
+                  data-bell-dot
+                  style={{
+                    position: "absolute",
+                    top: unread > 0 ? -4 : -2,
+                    right: unread > 0 ? -4 : -2,
+                    minWidth: unread > 0 ? 16 : 9,
+                    height: unread > 0 ? 16 : 9,
+                    padding: unread > 0 ? "0 4px" : 0,
+                    borderRadius: 999,
+                    background: "var(--mantine-color-magenta-6)",
+                    color: "#fff",
+                    fontSize: 10,
+                    lineHeight: unread > 0 ? "16px" : "9px",
+                    textAlign: "center",
+                    pointerEvents: "none",
+                    border: "1.5px solid var(--mantine-color-body)",
+                  }}
                 >
-                  {unread > 9 ? "9+" : unread}
-                </Badge>
+                  {unread > 0 ? (unread > 9 ? "9+" : unread) : ""}
+                </Box>
               )}
             </ActionIcon>
             {bellOpen && (

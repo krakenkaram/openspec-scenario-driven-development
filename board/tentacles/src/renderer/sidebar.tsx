@@ -1,4 +1,5 @@
-import { ActionIcon, Badge, Box, Group, Loader, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
+import { useState } from "react";
+import { ActionIcon, Badge, Box, Group, Loader, Paper, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
 import type { RepositoryGroup } from "../shared/ipc-contract";
 import { worktreeLeaves, worktreeStatus, worktreeDirName, type WorktreeLeaf } from "./worktrees";
 
@@ -59,6 +60,7 @@ function SidebarLeaf({
   onDelete: () => void;
 }) {
   const completed = worktreeStatus(leaf.changes) === "completed";
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <Box style={{ position: "relative" }}>
       <UnstyledButton
@@ -91,22 +93,57 @@ function SidebarLeaf({
         </Stack>
       </UnstyledButton>
       <ActionIcon
-        data-worktree-delete
+        data-worktree-menu
         variant="subtle"
-        color="red"
+        color="gray"
         size="xs"
-        title="Delete this worktree folder"
-        aria-label={`Delete worktree ${leaf.branch ?? leaf.repoPath}`}
+        title="Worktree actions"
+        aria-label={`Worktree actions for ${leaf.branch ?? leaf.repoPath}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
         onClick={(e) => {
           e.stopPropagation();
-          onDelete();
+          setMenuOpen((o) => !o);
         }}
         style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)" }}
       >
-        <span style={{ fontSize: 11, lineHeight: 1 }} aria-hidden>
-          🗑
+        <span style={{ fontSize: 15, lineHeight: 1 }} aria-hidden>
+          ⋯
         </span>
       </ActionIcon>
+      {menuOpen && (
+        <>
+          <Box
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+            }}
+            style={{ position: "fixed", inset: 0, zIndex: 200 }}
+            aria-hidden
+          />
+          <Paper
+            withBorder
+            shadow="md"
+            radius="md"
+            role="menu"
+            className="wt-menu"
+            style={{ position: "absolute", right: 6, top: "calc(50% + 12px)", zIndex: 201, minWidth: 168 }}
+          >
+            <UnstyledButton
+              role="menuitem"
+              className="wt-menu-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onDelete();
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 12, lineHeight: 1 }}>🗑</span>
+              Delete worktree
+            </UnstyledButton>
+          </Paper>
+        </>
+      )}
     </Box>
   );
 }
@@ -198,6 +235,19 @@ export function Sidebar({
   onSelectWorktree: (repoPath: string) => void;
   onDeleteWorktree: (repoPath: string, branch: string | null) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? groups.filter(
+        (g) =>
+          g.repositoryName.toLowerCase().includes(q) ||
+          worktreeLeaves(g).some(
+            (l) =>
+              (l.branch ?? "").toLowerCase().includes(q) ||
+              worktreeDirName(l.repoPath).toLowerCase().includes(q)
+          )
+      )
+    : groups;
   return (
     <Box component="aside" className="sidebar" style={{ width, flex: "0 0 auto", overflowY: "auto" }}>
       <Box className="sidebar-head" p="sm">
@@ -208,10 +258,12 @@ export function Sidebar({
           placeholder="Search repositories…"
           leftSection={<span aria-hidden>🔍</span>}
           aria-label="Search repositories"
+          value={query}
+          onChange={(e) => setQuery(e.currentTarget.value)}
         />
       </Box>
       <Stack gap={4} p="xs">
-        {groups.map((g) => (
+        {shown.map((g) => (
           <SidebarRepo
             key={g.repositoryId}
             group={g}

@@ -36,11 +36,6 @@
   padding: 1px 6px; background: transparent;
 }
 .bell { position: relative; }
-.bell::after {
-  content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--mantine-color-magenta-6);
-  border: 1.5px solid var(--mantine-color-body);
-}
 .status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 
 .app-body { display: flex; align-items: stretch; height: calc(100vh - 59px); }
@@ -72,11 +67,17 @@
 
 /* Layout: sidebar + resize handle + main */
 .layout { flex: 1; display: flex; align-items: stretch; min-width: 0; }
-.layout main { flex: 1; min-width: 0; overflow: auto; padding: 18px 20px 60px; }
+.layout main { flex: 1; min-width: 0; overflow: auto; padding: 18px 20px 20px; scrollbar-width: none; }
+.layout main::-webkit-scrollbar { display: none; }
 .sidebar { border-right: 1px solid var(--border); background: var(--surface); }
 .sidebar-head { border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .sb-resize { flex: 0 0 5px; cursor: col-resize; background: var(--border); opacity: .5; }
 .sb-resize:hover { opacity: 1; background: var(--accent); }
+
+/* Worktree "⋯" actions menu */
+.wt-menu { padding: 4px; background: var(--mantine-color-body); }
+.wt-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 0.8rem; color: var(--mantine-color-red-6); }
+.wt-menu-item:hover { background: color-mix(in srgb, var(--mantine-color-red-6) 15%, transparent); }
 
 /* Inline live worktree diff panel */
 .diff-panel { display:flex; flex-direction:column; height:calc(100vh - 120px); }
@@ -99,7 +100,7 @@
 }
 
 /* Worktree-detail: change chain(s) pinned above the worktree's single live diff */
-.worktree-detail { display:flex; flex-direction:column; height:calc(100vh - 96px); }
+.worktree-detail { display:flex; flex-direction:column; height:100%; }
 .worktree-detail > :first-child { flex:0 0 auto; max-height:45%; overflow:auto; }
 .worktree-detail .diff-panel { height:auto; flex:1; min-height:0; }
 
@@ -107,15 +108,20 @@
 .diff-body { flex:1; min-height:0; display:flex; font-family:ui-monospace,monospace; font-size:0.8rem; line-height:1.5; }
 .diff-empty { font-family:ui-monospace,monospace; }
 .diff-layout { display:flex; flex:1; min-height:0; width:100%; }
-.diff-sidebar { flex:0 0 240px; overflow:auto; border-right:1px solid var(--border); padding:8px 6px; display:flex; flex-direction:column; gap:1px; }
-.diff-tree-dir { font-family:ui-monospace,monospace; font-size:0.72rem; color:var(--muted); padding:4px 8px 2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:none; }
+.diff-sidebar { flex:0 0 240px; overflow:hidden; border-right:1px solid var(--border); padding:8px 6px; display:flex; flex-direction:column; gap:6px; }
+.diff-file-search { flex:0 0 auto; }
+.diff-tree-scroll { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:1px; }
+.diff-tree-dir-row { display:flex; align-items:center; gap:4px; width:100%; border:none; background:none; text-align:left; cursor:pointer; padding:4px 8px 2px; color:var(--muted); font-family:ui-monospace,monospace; font-size:0.72rem; border-radius:6px; }
+.diff-tree-dir-row:hover { background:color-mix(in srgb,var(--fg) 8%,transparent); }
+.diff-tree-caret { flex:0 0 auto; font-size:0.85rem; width:14px; text-align:center; opacity:.85; }
+.diff-tree-dir { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:none; }
 .diff-file-item { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:none; background:none; color:var(--fg); font-family:ui-monospace,monospace; font-size:0.76rem; padding:6px 8px; border-radius:6px; cursor:pointer; }
 .diff-file-item:hover { background:color-mix(in srgb,var(--fg) 8%,transparent); }
 .diff-file-item.active { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent); }
 .diff-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .diff-pane { flex:1; min-width:0; overflow:auto; padding:0 0 12px; }
 .diff-file-head { position:sticky; top:0; display:flex; gap:10px; align-items:center; padding:8px 16px; background:var(--surface); border-bottom:1px solid var(--border); z-index:1; }
-.diff-path { font-weight:600; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.diff-path { font-weight:600; color:var(--fg); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .diff-resize { flex:0 0 5px; cursor:col-resize; background:var(--border); opacity:.5; }
 .diff-resize:hover { opacity:1; background:var(--accent); }
 .diff-status { text-transform:uppercase; font-size:0.66rem; letter-spacing:0.04em; padding:1px 6px; border-radius:4px; border:1px solid var(--border); color:var(--muted); }
@@ -177,16 +183,16 @@
 /* Interaction polish: smooth hover feedback and a gentle fade when the main
    panel content changes (selecting a repository or worktree). Motion is gated on
    the reduced-motion preference. */
-.board-node { transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease; }
+.board-node { transition: transform 90ms ease-out, filter 90ms ease-out; will-change: transform; }
 button.board-node:hover, a.board-node:hover { transform: translateY(-1px); filter: brightness(1.12); }
 
-[data-repo-row], [data-worktree-leaf] { transition: background-color 120ms ease; }
+[data-repo-row], [data-worktree-leaf] { transition: background-color 90ms ease-out; }
 [data-repo-row]:hover, [data-worktree-leaf]:hover { background-color: color-mix(in srgb, var(--fg) 8%, transparent); }
 
-.ws-avatar { transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease; }
+.ws-avatar { transition: transform 90ms ease-out, filter 90ms ease-out; }
 .ws-avatar:hover { transform: translateY(-1px); filter: brightness(1.1); }
 
-.diff-file-item { transition: background-color 120ms ease, color 120ms ease; }
+.diff-file-item { transition: background-color 90ms ease-out, color 90ms ease-out; }
 
 @keyframes panel-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: no-preference) {

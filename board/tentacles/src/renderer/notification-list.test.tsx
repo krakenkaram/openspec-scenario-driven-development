@@ -67,4 +67,14 @@ describe("in-app notification bell", () => {
     await user.click(await screen.findByRole("button", { name: "Clear" }));
     expect(await screen.findByText(/no notifications yet/i)).toBeInTheDocument();
   });
+
+  it("shows no indicator dot with zero notifications, and one once a notification arrives", async () => {
+    const { fire } = setup();
+    render(<App />);
+
+    expect(document.querySelector("[data-bell-dot]")).toBeNull();
+
+    await fire({ title: "arrived", body: "b", at: 1 });
+    expect(document.querySelector("[data-bell-dot]")).not.toBeNull();
+  });
 });

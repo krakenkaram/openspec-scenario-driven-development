@@ -40,7 +40,7 @@ const phaseIcon: Record<string, string> = {
 };
 
 function nodeStyle(tone: NodeTone): React.CSSProperties {
-  const base: React.CSSProperties = { borderRadius: 12, minWidth: 98, background: "var(--mantine-color-default)" };
+  const base: React.CSSProperties = { borderRadius: 12, minWidth: 84, background: "var(--mantine-color-default)" };
   if (tone === "done")
     return {
       ...base,
@@ -60,8 +60,8 @@ function nodeStyle(tone: NodeTone): React.CSSProperties {
 
 function NodeBody({ phase, state, tone }: { phase: string; state: React.ReactNode; tone: NodeTone }) {
   return (
-    <Stack gap={3} align="center" py={8} px="sm">
-      <Text size="lg" aria-hidden lh={1}>
+    <Stack gap={2} align="center" py={6} px={8}>
+      <Text size="md" aria-hidden lh={1}>
         {phaseIcon[phase] ?? "•"}
       </Text>
       <Text size="xs" fw={700} tt="capitalize" c={tone === "progress" ? "magenta" : undefined}>
@@ -170,8 +170,8 @@ function DoneNode({ c }: { c: Change }) {
         underline="never"
         style={nodeStyle(tone)}
       >
-        <Stack gap={3} align="center" py={8} px="sm">
-          <Text size="lg" aria-hidden lh={1}>
+        <Stack gap={2} align="center" py={6} px={8}>
+          <Text size="md" aria-hidden lh={1}>
             🏁
           </Text>
           <Text size="xs" fw={700} tt="capitalize" c={tone === "progress" ? "magenta" : undefined}>
@@ -237,9 +237,6 @@ export function ChangeCard({
       style={{ opacity: removing ? 0.4 : 1, transition: reduceMotion ? undefined : "opacity 180ms ease" }}
     >
       <Group gap="xs" mb="md" wrap="wrap">
-        <Text aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>
-          🐙
-        </Text>
         <Title order={2} size="h4" style={{ margin: 0 }}>
           {c.change}
         </Title>
@@ -250,10 +247,11 @@ export function ChangeCard({
         ) : null}
         {typeBadge}
         {statusBadge}
-        <Button
-          variant="subtle"
-          size="compact-xs"
-          color="gray"
+        <Badge
+          component="button"
+          variant="light"
+          color="orange"
+          style={{ cursor: "pointer" }}
           title={`Reveal the ${c.schema} schema.yaml in Finder`}
           onClick={async () => {
             const res = await window.electronAPI.openSchemaFile(c.schema, c.repoPath);
@@ -261,7 +259,7 @@ export function ChangeCard({
           }}
         >
           {c.schema}
-        </Button>
+        </Badge>
         {c.pr && (
           <Anchor
             href={c.pr.url}
