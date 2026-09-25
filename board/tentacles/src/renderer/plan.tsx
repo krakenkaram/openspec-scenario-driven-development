@@ -40,29 +40,43 @@ export function PlanView() {
   const [idea, setIdea] = useState("");
   const [turns, setTurns] = useState<PlanTurn[]>([]);
   const [started, setStarted] = useState(false);
+  const [ended, setEnded] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
 
   useEffect(() => {
-    return window.electronAPI.onPlanTurn((turn) => {
+    const offTurn = window.electronAPI.onPlanTurn((turn) => {
       setTurns((t) => [...t, turn]);
     });
+    const offEnded = window.electronAPI.onPlanSessionEnded(() => {
+      setEnded(true);
+    });
+    return () => {
+      offTurn();
+      offEnded();
+    };
   }, []);
 
+  const pushError = (text: string) => setTurns((t) => [...t, { speaker: "error", text }]);
+
   const browse = async () => {
-    const res = await window.electronAPI.chooseDirectory();
+    const res = await window.electronAPI.planChooseFolder();
     if (res.path) setFolderPath(res.path);
   };
 
-  const openTicket = () => {
-    if (!folderPath) return;
-    void window.electronAPI.openPath(`${folderPath}/.tentacles/TICKET.html`);
+  const openTicket = async () => {
+    const res = await window.electronAPI.openTicket();
+    if (!res.ok) pushError(`Could not open the ticket: ${res.error}`);
   };
 
   const confirmNewRefinement = async () => {
-    const fp = folderPath;
     setConfirmNew(false);
-    if (fp) await window.electronAPI.newRefinement(fp);
+    const res = await window.electronAPI.newRefinement();
+    if (!res.ok) {
+      pushError(`Could not start a new refinement: ${res.error}`);
+      return;
+    }
     setStarted(false);
+    setEnded(false);
     setTurns([]);
     setFolderPath(null);
     setIdea("");
@@ -76,11 +90,14 @@ export function PlanView() {
       setTurns((t) => [...t, { speaker: "user", text }]);
       setIdea("");
       setStarted(true);
-      await window.electronAPI.startPlanSession({ folderPath, idea: text });
+      const res = await window.electronAPI.startPlanSession({ idea: text });
+      if (!res.ok) pushError(res.error);
     } else {
+      if (ended) return;
       setTurns((t) => [...t, { speaker: "user", text }]);
       setIdea("");
-      await window.electronAPI.sendPlanTurn(text);
+      const res = await window.electronAPI.sendPlanTurn(text);
+      if (!res.ok) pushError(res.error);
     }
   };
 
@@ -120,7 +137,7 @@ export function PlanView() {
       ) : (
         <Stack p="md" gap="sm" className="plan-chat" style={{ flex: 1, minHeight: 0 }}>
           <Group justify="flex-end" className="plan-toolbar">
-            <Button variant="default" size="xs" onClick={openTicket}>
+            <Button variant="default" size="xs" onClick={() => void openTicket()}>
               Open ticket
             </Button>
             <Button variant="default" size="xs" color="red" onClick={() => setConfirmNew(true)}>
@@ -134,17 +151,23 @@ export function PlanView() {
               ))}
             </Stack>
           </ScrollArea>
+          {ended && (
+            <Text size="xs" c="dimmed" data-testid="session-ended">
+              The session has ended. Start a new refinement to plan again.
+            </Text>
+          )}
           <Group align="flex-end" gap="sm" wrap="nowrap">
             <Textarea
               aria-label="Your reply"
-              placeholder="Reply…"
+              placeholder={ended ? "Session ended" : "Reply…"}
               value={idea}
               onChange={(e) => setIdea(e.currentTarget.value)}
               autosize
               minRows={1}
+              disabled={ended}
               style={{ flex: 1 }}
             />
-            <Button onClick={() => void send()} disabled={!idea.trim()}>
+            <Button onClick={() => void send()} disabled={ended || !idea.trim()}>
               Send
             </Button>
           </Group>

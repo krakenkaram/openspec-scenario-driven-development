@@ -28,6 +28,7 @@ const args = core.defaultArgs();
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
   planTurn: "board:planTurn",
+  planSessionEnded: "board:planSessionEnded",
 };
 
 // Runs from build/main/ after compile, so preload and the renderer index resolve
@@ -99,12 +100,33 @@ app.whenReady().then(() => {
   );
 
   // PLAN: one hosted kiro agent per session runs the tentacles-refinement skill
-  // in the picked folder; its turns are pushed to the renderer's chat.
+  // (bootstrapping docs first when absent) in the picked folder; its turns are
+  // pushed to the renderer's chat, and a terminal end fires planSessionEnded.
   const pushPlanTurn = (turn: PlanTurn) => {
     const win = BrowserWindow.getAllWindows()[0];
     win?.webContents.send(EVENTS.planTurn, turn);
   };
-  const plan = makePlanController(makeKiroAgentRunner(), pushPlanTurn);
+  const pushPlanEnded = () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win?.webContents.send(EVENTS.planSessionEnded);
+  };
+  // A PLAN-scoped native directory picker; the chosen folder becomes authoritative
+  // main-process state inside the controller (never a renderer-supplied path).
+  const choosePlanFolder = makeDirectoryChooser(() => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options: OpenDialogOptions = {
+      title: "Select a project folder to plan",
+      properties: ["openDirectory"],
+    };
+    return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
+  });
+  const plan = makePlanController(
+    makeKiroAgentRunner(),
+    pushPlanTurn,
+    pushPlanEnded,
+    choosePlanFolder,
+    (target: string) => shell.openPath(target)
+  );
 
   return bootstrap({
     app,

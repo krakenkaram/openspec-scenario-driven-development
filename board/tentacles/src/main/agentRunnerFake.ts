@@ -10,6 +10,8 @@ export interface FakeAgentSession {
   stopped: boolean;
   // Push a turn to the app as if the agent produced it.
   emit(turn: PlanTurn): void;
+  // Fire the terminal end signal as if the underlying agent exited.
+  exit(): void;
   send(text: string): void;
   stop(): void;
 }
@@ -30,6 +32,7 @@ export function makeFakeAgentRunner(opts: { failOnStart?: string } = {}): FakeAg
         sent: [],
         stopped: false,
         emit: (turn) => options.onTurn(turn),
+        exit: () => options.onExit?.(),
         send: (text) => {
           session.sent.push(text);
         },

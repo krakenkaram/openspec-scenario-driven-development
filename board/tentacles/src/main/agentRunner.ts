@@ -16,6 +16,10 @@ export interface StartSessionOptions {
   firstMessage: string;
   // Called for each turn the agent produces, in arrival order.
   onTurn: (turn: PlanTurn) => void;
+  // Called exactly once when the underlying agent ends — clean exit, non-zero
+  // exit, or spawn error. Terminal: no turns follow it. The controller uses this
+  // to clear session state and notify the renderer so a dead session is inert.
+  onExit?: () => void;
 }
 
 export interface AgentSession {

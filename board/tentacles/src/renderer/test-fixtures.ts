@@ -72,8 +72,11 @@ export type MockApi = {
   openSchemaFile: ReturnType<typeof vi.fn>;
   startPlanSession: ReturnType<typeof vi.fn>;
   sendPlanTurn: ReturnType<typeof vi.fn>;
+  openTicket: ReturnType<typeof vi.fn>;
+  planChooseFolder: ReturnType<typeof vi.fn>;
   newRefinement: ReturnType<typeof vi.fn>;
   onPlanTurn: ReturnType<typeof vi.fn>;
+  onPlanSessionEnded: ReturnType<typeof vi.fn>;
 };
 
 export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
@@ -108,8 +111,11 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     openSchemaFile: vi.fn().mockResolvedValue({ ok: true }),
     startPlanSession: vi.fn().mockResolvedValue({ ok: true }),
     sendPlanTurn: vi.fn().mockResolvedValue({ ok: true }),
+    openTicket: vi.fn().mockResolvedValue({ ok: true }),
+    planChooseFolder: vi.fn().mockResolvedValue({ path: null }),
     newRefinement: vi.fn().mockResolvedValue({ ok: true }),
     onPlanTurn: vi.fn().mockReturnValue(() => {}),
+    onPlanSessionEnded: vi.fn().mockReturnValue(() => {}),
     ...over,
   } as unknown as MockApi;
   (window as unknown as { electronAPI: ElectronAPI }).electronAPI = api as unknown as ElectronAPI;
@@ -131,6 +137,24 @@ export function planTurnChannel() {
     unsubscribe,
     emit(turn: PlanTurn) {
       handler?.(turn);
+    },
+  };
+}
+
+// A scriptable fake for the planSessionEnded push channel: pass `onPlanSessionEnded`
+// into mockApi, then call `end()` to fire the terminal signal at the app's handler.
+export function planSessionEndedChannel() {
+  let handler: (() => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanSessionEnded = vi.fn((cb: () => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanSessionEnded,
+    unsubscribe,
+    end() {
+      handler?.();
     },
   };
 }

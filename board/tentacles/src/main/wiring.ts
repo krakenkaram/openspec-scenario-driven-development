@@ -83,6 +83,8 @@ export const IPC: ChannelMap = {
   openSchemaFile: "board:openSchemaFile",
   startPlanSession: "board:startPlanSession",
   sendPlanTurn: "board:sendPlanTurn",
+  openTicket: "board:openTicket",
+  planChooseFolder: "board:planChooseFolder",
   newRefinement: "board:newRefinement",
 };
 
@@ -182,13 +184,17 @@ export interface SetupDeps {
 }
 
 // PLAN's session orchestration, injected like the other optional deps. It owns
-// the running agent (via the AgentRunner seam) and pushes turns to the renderer;
-// the handlers here only relay to it. Absent when PLAN is not wired (existing
-// tests), in which case the channels report "plan unavailable".
+// the running agent (via the AgentRunner seam) AND the authoritative picked
+// folder, and pushes turns to the renderer; the handlers here only relay to it.
+// Absent when PLAN is not wired (existing tests), in which case the channels
+// report "plan unavailable".
 export interface PlanController {
+  chooseFolder(): Promise<ChooseDirectoryResult>;
   startSession(payload: StartPlanSessionArgs): Promise<StartPlanSessionResult>;
   sendTurn(text: string): Promise<SendPlanTurnResult>;
-  newRefinement(folderPath: string): Promise<NewRefinementResult>;
+  openTicket(): Promise<OpenPathResult>;
+  newRefinement(): Promise<NewRefinementResult>;
+  shutdown(): void;
 }
 
 // The privileged operations, each backed by core. `getArgs` is a getter
@@ -311,17 +317,25 @@ export function makeHandlers(
       if (!reveal) return { ok: false, error: "reveal unavailable" };
       return core.openSchemaFile(getArgs(), name, repoPath, reveal);
     },
+    planChooseFolder: async (): Promise<ChooseDirectoryResult> => {
+      if (!plan) return { path: null };
+      return plan.chooseFolder();
+    },
     startPlanSession: async (_event: IpcMainInvokeEvent, payload: StartPlanSessionArgs | undefined): Promise<StartPlanSessionResult> => {
       if (!plan) return { ok: false, error: "plan unavailable" };
-      return plan.startSession(payload ?? { folderPath: "", idea: "" });
+      return plan.startSession(payload ?? { idea: "" });
     },
     sendPlanTurn: async (_event: IpcMainInvokeEvent, text: string): Promise<SendPlanTurnResult> => {
       if (!plan) return { ok: false, error: "plan unavailable" };
       return plan.sendTurn(text ?? "");
     },
-    newRefinement: async (_event: IpcMainInvokeEvent, folderPath: string): Promise<NewRefinementResult> => {
+    openTicket: async (): Promise<OpenPathResult> => {
       if (!plan) return { ok: false, error: "plan unavailable" };
-      return plan.newRefinement(folderPath ?? "");
+      return plan.openTicket();
+    },
+    newRefinement: async (): Promise<NewRefinementResult> => {
+      if (!plan) return { ok: false, error: "plan unavailable" };
+      return plan.newRefinement();
     },
   };
 }
@@ -364,6 +378,8 @@ export function registerIpc(
   ipcMain.handle(IPC.openSchemaFile, handlers.openSchemaFile);
   ipcMain.handle(IPC.startPlanSession, handlers.startPlanSession);
   ipcMain.handle(IPC.sendPlanTurn, handlers.sendPlanTurn);
+  ipcMain.handle(IPC.openTicket, handlers.openTicket);
+  ipcMain.handle(IPC.planChooseFolder, handlers.planChooseFolder);
   ipcMain.handle(IPC.newRefinement, handlers.newRefinement);
   return handlers;
 }
@@ -547,6 +563,12 @@ export async function bootstrap({
     if (isMac) reveal();
     else windows.ensure();
   });
+
+  // Terminate any live PLAN agent when the app quits, on every platform, so a
+  // hosted kiro process never outlives the window that owns it.
+  if (plan) {
+    app.on("before-quit", () => plan.shutdown());
+  }
 
   if (isMac) {
     app.on("before-quit", () => {

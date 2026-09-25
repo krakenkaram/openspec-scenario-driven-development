@@ -34,9 +34,15 @@ export function spawnKiroChat(folderPath: string, _skill: string): ChildLike {
 
 export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): AgentRunner {
   return {
-    start({ skill, folderPath, firstMessage, onTurn }: StartSessionOptions) {
+    start({ skill, folderPath, firstMessage, onTurn, onExit }: StartSessionOptions) {
       const child = spawnAgent(folderPath, skill);
       let buffer = "";
+      let ended = false;
+      const end = () => {
+        if (ended) return;
+        ended = true;
+        onExit?.();
+      };
 
       child.stdout.on("data", (chunk) => {
         buffer += chunk.toString();
@@ -47,7 +53,10 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
         }
       });
 
-      child.on("error", (err) => onTurn({ speaker: "error", text: err?.message ?? String(err) }));
+      child.on("error", (err) => {
+        onTurn({ speaker: "error", text: err?.message ?? String(err) });
+        end();
+      });
 
       child.on("exit", (code) => {
         if (buffer.trim().length > 0) {
@@ -55,9 +64,13 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
           buffer = "";
         }
         if (code != null && code !== 0) onTurn({ speaker: "error", text: `agent exited with code ${code}` });
+        end();
       });
 
-      child.stdin.write(`$${skill} ${firstMessage}\n`);
+      // The opening message is composed by the controller (it carries the docs
+      // bootstrap + refinement contract and the `$`-skill triggers), so it is
+      // written verbatim rather than re-wrapped here.
+      child.stdin.write(firstMessage.endsWith("\n") ? firstMessage : `${firstMessage}\n`);
 
       return {
         send: (text: string) => child.stdin.write(`${text}\n`),

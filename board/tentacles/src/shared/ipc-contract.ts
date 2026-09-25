@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's twenty-one
+// Type-only IPC contract: the single source of truth for the board's twenty-three
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -248,8 +248,10 @@ export interface PlanTurn {
   speaker: PlanSpeaker;
   text: string;
 }
+// The folder is NOT carried here: the renderer is untrusted (ADR-0002), so the
+// picked folder is authoritative main-process state set via planChooseFolder and
+// bound to start/open/wipe there. The renderer only supplies the idea.
 export interface StartPlanSessionArgs {
-  folderPath: string;
   idea: string;
 }
 export type StartPlanSessionResult = { ok: true } | { ok: false; error: string };
@@ -281,6 +283,8 @@ export interface ChannelMap {
   openSchemaFile: "board:openSchemaFile";
   startPlanSession: "board:startPlanSession";
   sendPlanTurn: "board:sendPlanTurn";
+  openTicket: "board:openTicket";
+  planChooseFolder: "board:planChooseFolder";
   newRefinement: "board:newRefinement";
 }
 
@@ -294,6 +298,11 @@ export interface EventChannelMap {
   notificationSound: "board:notificationSound";
   // A PLAN agent turn pushed to the renderer as the hosted agent produces it.
   planTurn: "board:planTurn";
+  // Fired once when the hosted agent's session ends (clean exit, non-zero exit,
+  // or spawn error). The renderer disables the reply control on this signal so a
+  // dead session can no longer be typed into. The terminal error text, when any,
+  // arrives first as an `error` PlanTurn.
+  planSessionEnded: "board:planSessionEnded";
 }
 
 export type EventChannel = EventChannelMap[keyof EventChannelMap];
@@ -333,15 +342,27 @@ export interface ElectronAPI {
   // addressed by schema NAME plus the change's repo so the main process resolves
   // the folder itself and reveals the file (see core.openSchemaFile).
   openSchemaFile(name: string, repoPath: string): Promise<OpenPathResult>;
-  // PLAN: start a refinement session for a picked folder and first idea. The main
-  // process starts the hosted agent (the tentacles-refinement skill) in that
+  // PLAN: choose the project folder through the native picker. The main process
+  // records the canonical chosen path as authoritative session state; the
+  // returned path is for display only. start/open/wipe all bind to the recorded
+  // folder, never to a renderer-supplied path (ADR-0002).
+  planChooseFolder(): Promise<ChooseDirectoryResult>;
+  // PLAN: start a refinement session for the recorded folder and this idea. The
+  // main process starts the hosted agent (the tentacles-refinement skill,
+  // bootstrapping docs via tentacles-documentation first when absent) in that
   // folder; its turns arrive via onPlanTurn.
   startPlanSession(payload: StartPlanSessionArgs): Promise<StartPlanSessionResult>;
   // Relay a user turn to the running agent.
   sendPlanTurn(text: string): Promise<SendPlanTurnResult>;
-  // New refinement: delete only `<folder>/.tentacles/TICKET.html`, keeping the
-  // `.md` docs, and reset the session.
-  newRefinement(folderPath: string): Promise<NewRefinementResult>;
+  // Open the recorded folder's `.tentacles/TICKET.html` in the OS-default app.
+  // Resolved and containment-guarded main-side; the renderer supplies no path.
+  openTicket(): Promise<OpenPathResult>;
+  // New refinement: stop the session and delete only the recorded folder's
+  // `.tentacles/TICKET.html`, keeping the `.md` docs. Takes no path — it acts on
+  // the recorded folder.
+  newRefinement(): Promise<NewRefinementResult>;
   // Subscribe to agent turns pushed from main; returns an unsubscribe function.
   onPlanTurn(handler: (turn: PlanTurn) => void): () => void;
+  // Subscribe to the terminal session-ended signal; returns an unsubscribe fn.
+  onPlanSessionEnded(handler: () => void): () => void;
 }

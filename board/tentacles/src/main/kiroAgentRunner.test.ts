@@ -46,7 +46,7 @@ describe("attributeLine — persona prefixes → speakers", () => {
 });
 
 describe("makeKiroAgentRunner — streaming and lifecycle", () => {
-  it("sends the first message, streams stdout lines as attributed turns, relays user turns, and stops the child", () => {
+  it("writes the opening message verbatim, streams stdout lines as attributed turns, relays user turns, and stops the child", () => {
     const fake = makeFakeChild();
     const runner = makeKiroAgentRunner(() => fake.child);
     const turns: PlanTurn[] = [];
@@ -58,7 +58,8 @@ describe("makeKiroAgentRunner — streaming and lifecycle", () => {
       onTurn: (t) => turns.push(t),
     });
 
-    expect(fake.stdinWrites[0]).toContain("add dark mode");
+    // Exact opening protocol: the composed message, newline-terminated, no re-wrap.
+    expect(fake.stdinWrites[0]).toBe("add dark mode\n");
 
     fake.emitStdout("**BA:** Hi\n**QA:** Edge cases?\n");
     expect(turns).toEqual([
@@ -67,7 +68,7 @@ describe("makeKiroAgentRunner — streaming and lifecycle", () => {
     ]);
 
     session.send("my answer");
-    expect(fake.stdinWrites.some((w) => w.includes("my answer"))).toBe(true);
+    expect(fake.stdinWrites).toContain("my answer\n");
 
     session.stop();
     expect(fake.killed).toBe(true);
@@ -105,5 +106,28 @@ describe("makeKiroAgentRunner — streaming and lifecycle", () => {
     fake.emitError(new Error("kiro-cli not found"));
 
     expect(turns).toContainEqual({ speaker: "error", text: "kiro-cli not found" });
+  });
+
+  it("signals onExit exactly once when the agent exits", () => {
+    const fake = makeFakeChild();
+    const runner = makeKiroAgentRunner(() => fake.child);
+    let exits = 0;
+    runner.start({ skill: "s", folderPath: "/p", firstMessage: "hi", onTurn: () => {}, onExit: () => (exits += 1) });
+
+    fake.emitExit(0);
+
+    expect(exits).toBe(1);
+  });
+
+  it("signals onExit once on a spawn error and not again on a following exit", () => {
+    const fake = makeFakeChild();
+    const runner = makeKiroAgentRunner(() => fake.child);
+    let exits = 0;
+    runner.start({ skill: "s", folderPath: "/p", firstMessage: "hi", onTurn: () => {}, onExit: () => (exits += 1) });
+
+    fake.emitError(new Error("boom"));
+    fake.emitExit(1);
+
+    expect(exits).toBe(1);
   });
 });

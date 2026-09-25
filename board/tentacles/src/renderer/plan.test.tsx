@@ -3,7 +3,7 @@ import { act } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { mockApi, planTurnChannel } from "./test-fixtures";
+import { mockApi, planTurnChannel, planSessionEndedChannel } from "./test-fixtures";
 
 async function gotoPlan(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "PLAN" }));
@@ -23,8 +23,8 @@ describe("PLAN — folder picker and first idea", () => {
     expect(screen.queryByTestId("chat-turn")).not.toBeInTheDocument();
   });
 
-  it("picking a folder and sending the first idea starts the session and shows the user's turn", async () => {
-    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+  it("picking a folder and sending the first idea starts the session with the idea only", async () => {
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
     render(<App />);
     const user = userEvent.setup();
 
@@ -35,9 +35,7 @@ describe("PLAN — folder picker and first idea", () => {
     await user.type(screen.getByLabelText(/describe your idea/i), "add a dark mode toggle");
     await user.click(screen.getByRole("button", { name: /start refinement/i }));
 
-    await waitFor(() =>
-      expect(api.startPlanSession).toHaveBeenCalledWith({ folderPath: "/Code/my-proj", idea: "add a dark mode toggle" })
-    );
+    await waitFor(() => expect(api.startPlanSession).toHaveBeenCalledWith({ idea: "add a dark mode toggle" }));
     expect(await screen.findByText("add a dark mode toggle")).toBeInTheDocument();
   });
 });
@@ -52,7 +50,7 @@ async function startSession(user: ReturnType<typeof userEvent.setup>, idea = "ad
 describe("PLAN — amigos stream as named speakers and the user replies", () => {
   it("renders BA then QA turns as distinct named speakers in order", async () => {
     const chan = planTurnChannel();
-    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -74,7 +72,7 @@ describe("PLAN — amigos stream as named speakers and the user replies", () => 
   });
 
   it("relays the user's mid-session reply and shows it as the user", async () => {
-    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -90,7 +88,7 @@ describe("PLAN — amigos stream as named speakers and the user replies", () => 
 describe("PLAN — the docs step is relayed by the agent, not refereed by the app", () => {
   it("renders docs offer/written/revised turns in order like any turn and relays the user's agreement", async () => {
     const chan = planTurnChannel();
-    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user, "add a feature");
@@ -121,30 +119,45 @@ describe("PLAN — the docs step is relayed by the agent, not refereed by the ap
     render(<App />);
     const user = userEvent.setup();
     await gotoPlan(user);
-    // PLAN exposes no folder-probe / docs-check on its API surface.
     expect((api as unknown as Record<string, unknown>).checkTentaclesDocs).toBeUndefined();
     expect((api as unknown as Record<string, unknown>).tentaclesPresence).toBeUndefined();
-    // The picker is reachable with no docs-approval gate blocking the phase.
     expect(screen.getByRole("button", { name: /choose folder/i })).toBeInTheDocument();
   });
 });
 
 describe("PLAN — the ticket can be opened", () => {
-  it("offers to open the ticket at the conventional path in the picked folder", async () => {
-    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+  it("asks main to open the ticket without supplying a path", async () => {
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
 
     await user.click(screen.getByRole("button", { name: /open ticket/i }));
 
-    expect(api.openPath).toHaveBeenCalledWith("/Code/my-proj/.tentacles/TICKET.html");
+    expect(api.openTicket).toHaveBeenCalledWith();
+  });
+
+  it("surfaces an open-ticket failure as an error turn", async () => {
+    const api = mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      openTicket: vi.fn().mockResolvedValue({ ok: false, error: "no ticket yet" }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: /open ticket/i }));
+
+    const err = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
+    expect(err).toBeTruthy();
+    expect(within(err).getByText(/no ticket yet/i)).toBeInTheDocument();
+    expect(api.openTicket).toHaveBeenCalled();
   });
 });
 
 describe("PLAN — new refinement warns then resets", () => {
   it("cancelling the warning keeps the chat and wipes nothing", async () => {
-    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -157,8 +170,8 @@ describe("PLAN — new refinement warns then resets", () => {
     expect(screen.getByLabelText(/your reply/i)).toBeInTheDocument();
   });
 
-  it("confirming wipes the ticket and returns to the folder picker", async () => {
-    const api = mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+  it("confirming wipes the ticket (no path arg) and returns to the folder picker", async () => {
+    const api = mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -166,7 +179,7 @@ describe("PLAN — new refinement warns then resets", () => {
     await user.click(screen.getByRole("button", { name: "New refinement" }));
     await user.click(await screen.findByRole("button", { name: /discard ticket and start over/i }));
 
-    await waitFor(() => expect(api.newRefinement).toHaveBeenCalledWith("/Code/my-proj"));
+    await waitFor(() => expect(api.newRefinement).toHaveBeenCalledWith());
     expect(await screen.findByRole("button", { name: /choose folder/i })).toBeInTheDocument();
   });
 });
@@ -174,7 +187,7 @@ describe("PLAN — new refinement warns then resets", () => {
 describe("PLAN — the session is ephemeral but survives phase switches", () => {
   it("keeps the chat when leaving PLAN and returning", async () => {
     const chan = planTurnChannel();
-    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -190,7 +203,7 @@ describe("PLAN — the session is ephemeral but survives phase switches", () => 
 
   it("shows a turn that arrived while the user was on another phase", async () => {
     const chan = planTurnChannel();
-    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -203,7 +216,7 @@ describe("PLAN — the session is ephemeral but survives phase switches", () => 
   });
 });
 
-describe("PLAN — failures surface in the chat with no up-front gate", () => {
+describe("PLAN — failures surface in the chat and the session becomes terminal", () => {
   it("keeps the folder picker reachable even before any session (no up-front gate)", async () => {
     mockApi();
     render(<App />);
@@ -215,7 +228,7 @@ describe("PLAN — failures surface in the chat with no up-front gate", () => {
 
   it("renders an agent error turn distinctly in the chat", async () => {
     const chan = planTurnChannel();
-    mockApi({ chooseDirectory: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }), onPlanTurn: chan.onPlanTurn });
     render(<App />);
     const user = userEvent.setup();
     await startSession(user);
@@ -225,5 +238,24 @@ describe("PLAN — failures surface in the chat with no up-front gate", () => {
     const errorTurn = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
     expect(errorTurn).toBeTruthy();
     expect(within(errorTurn).getByText("the agent crashed")).toBeInTheDocument();
+  });
+
+  it("disables the reply control once the session has ended", async () => {
+    const ended = planSessionEndedChannel();
+    mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      onPlanSessionEnded: ended.onPlanSessionEnded,
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    expect(screen.getByLabelText(/your reply/i)).not.toBeDisabled();
+
+    act(() => ended.end());
+
+    expect(await screen.findByTestId("session-ended")).toBeInTheDocument();
+    expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
   });
 });
