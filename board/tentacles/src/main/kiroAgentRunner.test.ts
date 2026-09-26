@@ -14,13 +14,13 @@ function chunk(text: string): string {
 // drive that child's stdout/exit/error.
 function makeFakeChild(opts: SpawnTurnOptions) {
   let dataCb: (chunk: string) => void = () => {};
-  let exitCb: (code: number | null) => void = () => {};
+  let exitCb: (code: number | null, signal: string | null) => void = () => {};
   let errorCb: (e: Error) => void = () => {};
   let killed = false;
   const child: ChildLike = {
     stdout: { on: (_e, cb) => (dataCb = cb) },
     on: (e, cb) => {
-      if (e === "exit") exitCb = cb as (code: number | null) => void;
+      if (e === "exit") exitCb = cb as (code: number | null, signal: string | null) => void;
       if (e === "error") errorCb = cb as (e: Error) => void;
     },
     kill: () => {
@@ -31,7 +31,7 @@ function makeFakeChild(opts: SpawnTurnOptions) {
     child,
     opts,
     emitStdout: (s: string) => dataCb(s),
-    emitExit: (code: number | null) => exitCb(code),
+    emitExit: (code: number | null, signal: string | null = null) => exitCb(code, signal),
     emitError: (e: Error) => errorCb(e),
     get killed() {
       return killed;
@@ -240,6 +240,20 @@ describe("makeKiroAgentRunner — terminal failures", () => {
     sp.last().emitExit(1);
 
     expect(turns).toContainEqual({ speaker: "error", text: "agent exited with code 1" });
+    expect(exits).toBe(1);
+  });
+
+  it("treats a signal-killed active child (null exit code) as a terminal crash", () => {
+    const sp = fakeSpawner();
+    const runner = makeKiroAgentRunner(sp.spawn);
+    const turns: PlanTurn[] = [];
+    let exits = 0;
+    runner.start({ skill: "s", folderPath: "/p", firstMessage: "hi", onTurn: (t) => turns.push(t), onExit: () => (exits += 1) });
+
+    // The active child is killed by a signal — Node reports code null, signal set.
+    sp.last().emitExit(null, "SIGKILL");
+
+    expect(turns).toContainEqual({ speaker: "error", text: "agent terminated (SIGKILL)" });
     expect(exits).toBe(1);
   });
 

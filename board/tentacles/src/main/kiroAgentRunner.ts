@@ -42,7 +42,7 @@ export function agentTextOf(event: unknown): string | null {
 // message is passed as a spawn argument (not stdin), so no stdin handle is needed.
 export interface ChildLike {
   stdout: { on(event: "data", cb: (chunk: string) => void): void };
-  on(event: "exit", cb: (code: number | null) => void): void;
+  on(event: "exit", cb: (code: number | null, signal: string | null) => void): void;
   on(event: "error", cb: (err: Error) => void): void;
   kill(): void;
 }
@@ -166,13 +166,18 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
           endSession();
         });
 
-        child.on("exit", (code) => {
+        child.on("exit", (code, signal) => {
           if (ended || child !== active) return;
           if (lineBuf.trim().length > 0) emitTurn(attributeSticky(lineBuf));
           lineBuf = "";
           onStream?.(null);
-          if (code != null && code !== 0) {
-            emitTurn({ speaker: "error", text: `agent exited with code ${code}` });
+          // Anything but a clean exit(0) is terminal. A non-zero code is an agent
+          // error; a null code means the child was killed by a signal (crash,
+          // OOM, SIGKILL) — that is a crash, not a completed turn, so it must end
+          // the session rather than leave it usable.
+          if (code !== 0) {
+            const reason = code != null ? `agent exited with code ${code}` : `agent terminated (${signal ?? "signal"})`;
+            emitTurn({ speaker: "error", text: reason });
             endSession();
             return;
           }
