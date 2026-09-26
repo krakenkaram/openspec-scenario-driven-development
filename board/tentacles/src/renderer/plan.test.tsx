@@ -269,7 +269,7 @@ describe("PLAN — the ticket can be opened", () => {
     const user = userEvent.setup();
     await startSession(user);
 
-    await user.click(screen.getByRole("button", { name: /open ticket/i }));
+    await user.click(screen.getByRole("button", { name: /open externally/i }));
 
     expect(api.openTicket).toHaveBeenCalledWith();
   });
@@ -283,7 +283,7 @@ describe("PLAN — the ticket can be opened", () => {
     const user = userEvent.setup();
     await startSession(user);
 
-    await user.click(screen.getByRole("button", { name: /open ticket/i }));
+    await user.click(screen.getByRole("button", { name: /open externally/i }));
 
     const err = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
     expect(err).toBeTruthy();
@@ -457,5 +457,59 @@ describe("PLAN — failures surface in the chat and the session becomes terminal
     // The wipe failed, so the chat is kept — but terminal (main stopped the session).
     expect(await screen.findByTestId("session-ended")).toBeInTheDocument();
     expect(screen.getByLabelText(/your reply/i)).toBeDisabled();
+  });
+});
+
+describe("PLAN — header, folder context and in-app ticket viewing", () => {
+  it("titles the panel Three Amigos and credits Kiro", async () => {
+    mockApi();
+    render(<App />);
+    const user = userEvent.setup();
+    await gotoPlan(user);
+
+    expect(screen.getByText("Three Amigos")).toBeInTheDocument();
+    expect(screen.getByText(/powered by kiro/i)).toBeInTheDocument();
+  });
+
+  it("keeps the chosen folder visible after the chat begins", async () => {
+    mockApi({ planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }) });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    expect(screen.getByTestId("plan-folder").textContent).toContain("/Code/my-proj");
+  });
+
+  it("views the ticket inside the app, rendering its HTML", async () => {
+    const api = mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      readTicket: vi.fn().mockResolvedValue({ ok: true, html: "<h1>My Ticket</h1>" }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: /view ticket/i }));
+
+    expect(api.readTicket).toHaveBeenCalledWith();
+    const frame = await screen.findByTestId("ticket-frame");
+    expect(frame.getAttribute("srcdoc")).toContain("<h1>My Ticket</h1>");
+  });
+
+  it("surfaces a view-ticket failure as an error turn", async () => {
+    const api = mockApi({
+      planChooseFolder: vi.fn().mockResolvedValue({ path: "/Code/my-proj" }),
+      readTicket: vi.fn().mockResolvedValue({ ok: false, error: "no ticket yet" }),
+    });
+    render(<App />);
+    const user = userEvent.setup();
+    await startSession(user);
+
+    await user.click(screen.getByRole("button", { name: /view ticket/i }));
+
+    const err = (await screen.findAllByTestId("chat-turn")).find((t) => t.getAttribute("data-speaker") === "error")!;
+    expect(err).toBeTruthy();
+    expect(within(err).getByText(/no ticket yet/i)).toBeInTheDocument();
+    expect(api.readTicket).toHaveBeenCalled();
   });
 });

@@ -8,6 +8,7 @@ import type {
   NewRefinementResult,
   OpenPathResult,
   PlanTurn,
+  ReadTicketResult,
   SendPlanTurnResult,
   StartPlanSessionArgs,
   StartPlanSessionResult,
@@ -126,6 +127,24 @@ export function makePlanController(
       if (!stat.isFile()) return { ok: false, error: "not a file" };
       const error = await openPath(ticket);
       return error ? { ok: false, error } : { ok: true };
+    },
+
+    async readTicket(): Promise<ReadTicketResult> {
+      if (!selectedFolder) return { ok: false, error: "no folder chosen" };
+      const ticket = containedRealPath(selectedFolder, TICKET_REL);
+      if (!ticket) return { ok: false, error: "ticket path outside folder" };
+      let stat: fs.Stats;
+      try {
+        stat = fs.lstatSync(ticket);
+      } catch {
+        return { ok: false, error: "no ticket yet" };
+      }
+      if (!stat.isFile()) return { ok: false, error: "not a file" };
+      try {
+        return { ok: true, html: fs.readFileSync(ticket, "utf8") };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
     },
 
     async newRefinement(): Promise<NewRefinementResult> {

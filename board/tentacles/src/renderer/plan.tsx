@@ -1,15 +1,15 @@
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Box, Button, Group, Modal as MantineModal, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
 import type { PlanTurn } from "../shared/ipc-contract";
 
 function KiroEngineBadge() {
   return (
-    <Group gap={6} data-testid="kiro-engine" aria-label="Engine: kiro" className="kiro-engine" wrap="nowrap">
+    <Group gap={6} data-testid="kiro-engine" aria-label="Engine: Kiro" className="kiro-engine" wrap="nowrap">
       <Box component="span" aria-hidden className="kiro-mark">
         ◆
       </Box>
       <Text size="xs" c="dimmed">
-        Powered by kiro
+        Powered by Kiro
       </Text>
     </Group>
   );
@@ -25,9 +25,9 @@ const SPEAKER_LABEL: Record<PlanTurn["speaker"], string> = {
 };
 
 // Consecutive turns from the same speaker are folded into one message so a run
-// of lines from one amigo reads as a single message rather than many bubbles.
-// Because turns arrive one line at a time as the agent generates them, a group
-// grows line-by-line — the streaming effect.
+// of lines from one amigo reads as a single message rather than many. Because
+// turns arrive one line at a time as the agent generates them, a group grows
+// line-by-line — the streaming effect.
 interface TurnGroup {
   speaker: PlanTurn["speaker"];
   lines: string[];
@@ -49,7 +49,7 @@ function ChatGroup({ group }: { group: TurnGroup }) {
       <Text size="xs" fw={700} className="turn-speaker">
         {SPEAKER_LABEL[group.speaker]}
       </Text>
-      <Stack gap="xs">
+      <Stack gap={4}>
         {group.lines.map((line, i) => (
           <Text key={i} size="sm" data-testid="turn-line">
             {line}
@@ -60,8 +60,8 @@ function ChatGroup({ group }: { group: TurnGroup }) {
   );
 }
 
-// Animated "typing" dots shown as a bubble in the chat stream while an amigo is
-// generating, so the wait for the agent reads as activity rather than a freeze.
+// Animated "typing" dots shown in the chat stream while an amigo is generating,
+// so the wait for the agent reads as activity rather than a freeze.
 function ThinkingDots() {
   return (
     <Box data-testid="thinking" className="chat-turn thinking-bubble" aria-label="An amigo is thinking">
@@ -81,6 +81,8 @@ export function PlanView() {
   const [ended, setEnded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
+  const [ticketHtml, setTicketHtml] = useState<string | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const offTurn = window.electronAPI.onPlanTurn((turn) => {
@@ -105,6 +107,13 @@ export function PlanView() {
     };
   }, []);
 
+  // Keep the newest message in view as turns arrive, stream, or the thinking
+  // dots appear — the chat pins to the bottom like any chat client.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns, streaming, busy, started]);
+
   const pushError = (text: string) => setTurns((t) => [...t, { speaker: "error", text }]);
 
   const browse = async () => {
@@ -115,6 +124,12 @@ export function PlanView() {
   const openTicket = async () => {
     const res = await window.electronAPI.openTicket();
     if (!res.ok) pushError(`Could not open the ticket: ${res.error}`);
+  };
+
+  const viewTicket = async () => {
+    const res = await window.electronAPI.readTicket();
+    if (res.ok) setTicketHtml(res.html);
+    else pushError(`Could not view the ticket: ${res.error}`);
   };
 
   const confirmNewRefinement = async () => {
@@ -177,7 +192,7 @@ export function PlanView() {
   return (
     <Stack data-testid="plan-phase" className="plan-phase" gap={0} style={{ flex: 1, minWidth: 0 }}>
       <Group justify="space-between" p="sm" className="plan-header">
-        <Text fw={600}>Plan a change</Text>
+        <Text fw={600}>Three Amigos</Text>
         <KiroEngineBadge />
       </Group>
 
@@ -210,16 +225,26 @@ export function PlanView() {
         </Stack>
       ) : (
         <Stack p="md" gap="sm" className="plan-chat" style={{ flex: 1, minHeight: 0 }}>
-          <Group justify="flex-end" className="plan-toolbar">
-            <Button variant="default" size="xs" onClick={() => void openTicket()}>
-              Open ticket
-            </Button>
-            <Button variant="default" size="xs" color="red" onClick={() => setConfirmNew(true)}>
-              New refinement
-            </Button>
+          <Group justify="space-between" className="plan-toolbar" wrap="nowrap">
+            {folderPath && (
+              <Text size="xs" c="dimmed" className="plan-folder" title={folderPath} data-testid="plan-folder">
+                📁 {folderPath}
+              </Text>
+            )}
+            <Group gap="xs" wrap="nowrap">
+              <Button variant="default" size="xs" onClick={() => void viewTicket()}>
+                View ticket
+              </Button>
+              <Button variant="default" size="xs" onClick={() => void openTicket()}>
+                Open externally
+              </Button>
+              <Button variant="default" size="xs" color="red" onClick={() => setConfirmNew(true)}>
+                New refinement
+              </Button>
+            </Group>
           </Group>
-          <ScrollArea style={{ flex: 1 }} className="plan-chat-scroll">
-            <Stack gap="xs">
+          <ScrollArea style={{ flex: 1 }} className="plan-chat-scroll" viewportRef={viewportRef}>
+            <Stack gap="md">
               {groupTurns(streaming ? [...turns, streaming] : turns).map((g, i) => (
                 <ChatGroup key={i} group={g} />
               ))}
@@ -234,6 +259,7 @@ export function PlanView() {
           <Group align="flex-end" gap="sm" wrap="nowrap">
             <Textarea
               aria-label="Your reply"
+              className="plan-reply"
               placeholder={ended ? "Session ended" : busy ? "Waiting for a reply…" : "Reply…"}
               value={idea}
               onChange={(e) => setIdea(e.currentTarget.value)}
@@ -249,6 +275,23 @@ export function PlanView() {
           </Group>
         </Stack>
       )}
+
+      <MantineModal
+        opened={ticketHtml !== null}
+        onClose={() => setTicketHtml(null)}
+        title="Ticket"
+        size="xl"
+        transitionProps={{ duration: 0 }}
+        closeButtonProps={{ "aria-label": "Close" }}
+      >
+        <iframe
+          title="Ticket"
+          data-testid="ticket-frame"
+          sandbox=""
+          srcDoc={ticketHtml ?? ""}
+          className="ticket-frame"
+        />
+      </MantineModal>
 
       <MantineModal
         opened={confirmNew}

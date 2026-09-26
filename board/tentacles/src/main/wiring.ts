@@ -58,6 +58,7 @@ import type {
   StartPlanSessionResult,
   SendPlanTurnResult,
   NewRefinementResult,
+  ReadTicketResult,
 } from "../shared/ipc-contract";
 
 // IPC channel names. preload.ts hardcodes the same string literals (a sandboxed
@@ -86,6 +87,7 @@ export const IPC: ChannelMap = {
   startPlanSession: "board:startPlanSession",
   sendPlanTurn: "board:sendPlanTurn",
   openTicket: "board:openTicket",
+  readTicket: "board:readTicket",
   planChooseFolder: "board:planChooseFolder",
   newRefinement: "board:newRefinement",
 };
@@ -196,6 +198,7 @@ export interface PlanController {
   startSession(payload: StartPlanSessionArgs): Promise<StartPlanSessionResult>;
   sendTurn(text: string): Promise<SendPlanTurnResult>;
   openTicket(): Promise<OpenPathResult>;
+  readTicket(): Promise<ReadTicketResult>;
   newRefinement(): Promise<NewRefinementResult>;
   shutdown(): void;
 }
@@ -340,6 +343,10 @@ export function makeHandlers(
       if (!plan) return { ok: false, error: "plan unavailable" };
       return plan.openTicket();
     },
+    readTicket: async (): Promise<ReadTicketResult> => {
+      if (!plan) return { ok: false, error: "plan unavailable" };
+      return plan.readTicket();
+    },
     newRefinement: async (): Promise<NewRefinementResult> => {
       if (!plan) return { ok: false, error: "plan unavailable" };
       return plan.newRefinement();
@@ -387,6 +394,7 @@ export function registerIpc(
   ipcMain.handle(IPC.startPlanSession, handlers.startPlanSession);
   ipcMain.handle(IPC.sendPlanTurn, handlers.sendPlanTurn);
   ipcMain.handle(IPC.openTicket, handlers.openTicket);
+  ipcMain.handle(IPC.readTicket, handlers.readTicket);
   ipcMain.handle(IPC.planChooseFolder, handlers.planChooseFolder);
   ipcMain.handle(IPC.newRefinement, handlers.newRefinement);
   return handlers;

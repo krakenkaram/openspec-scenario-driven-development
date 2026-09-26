@@ -75,6 +75,7 @@ export type MockApi = {
   startPlanSession: ReturnType<typeof vi.fn>;
   sendPlanTurn: ReturnType<typeof vi.fn>;
   openTicket: ReturnType<typeof vi.fn>;
+  readTicket: ReturnType<typeof vi.fn>;
   planChooseFolder: ReturnType<typeof vi.fn>;
   newRefinement: ReturnType<typeof vi.fn>;
   onPlanTurn: ReturnType<typeof vi.fn>;
@@ -118,6 +119,7 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     startPlanSession: vi.fn().mockResolvedValue({ ok: true }),
     sendPlanTurn: vi.fn().mockResolvedValue({ ok: true }),
     openTicket: vi.fn().mockResolvedValue({ ok: true }),
+    readTicket: vi.fn().mockResolvedValue({ ok: true, html: "<h1>Ticket</h1>" }),
     planChooseFolder: vi.fn().mockResolvedValue({ path: null }),
     newRefinement: vi.fn().mockResolvedValue({ ok: true }),
     onPlanTurn: vi.fn().mockReturnValue(() => {}),

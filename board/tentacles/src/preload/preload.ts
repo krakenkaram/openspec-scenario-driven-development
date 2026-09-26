@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppNotification, ChannelMap, ElectronAPI, EventChannelMap } from "../shared/ipc-contract";
 
-// Exactly twenty-four named channels — no generic command passthrough. A sandboxed
+// Exactly twenty-five named channels — no generic command passthrough. A sandboxed
 // preload cannot import wiring.ts at runtime, so the channel strings are
 // declared here; typing the map as the shared ChannelMap asserts each method is
 // bound to its exact channel (a typo, missing key, or swap fails to compile).
@@ -28,6 +28,7 @@ const CHANNELS: ChannelMap = {
   startPlanSession: "board:startPlanSession",
   sendPlanTurn: "board:sendPlanTurn",
   openTicket: "board:openTicket",
+  readTicket: "board:readTicket",
   planChooseFolder: "board:planChooseFolder",
   newRefinement: "board:newRefinement",
 };
@@ -76,6 +77,7 @@ const api: ElectronAPI = {
   startPlanSession: (payload) => ipcRenderer.invoke(CHANNELS.startPlanSession, payload),
   sendPlanTurn: (text) => ipcRenderer.invoke(CHANNELS.sendPlanTurn, text),
   openTicket: () => ipcRenderer.invoke(CHANNELS.openTicket),
+  readTicket: () => ipcRenderer.invoke(CHANNELS.readTicket),
   planChooseFolder: () => ipcRenderer.invoke(CHANNELS.planChooseFolder),
   newRefinement: () => ipcRenderer.invoke(CHANNELS.newRefinement),
   onPlanTurn: (handler) => {

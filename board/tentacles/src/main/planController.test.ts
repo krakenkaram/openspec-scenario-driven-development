@@ -263,6 +263,47 @@ describe("PlanController — opening the ticket is guarded and main-owned", () =
   });
 });
 
+describe("PlanController — reading the ticket for in-app viewing is guarded and main-owned", () => {
+  it("returns the recorded folder's .tentacles/TICKET.html contents", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-read-"));
+    fs.mkdirSync(path.join(folder, ".tentacles"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".tentacles", "TICKET.html"), "<h1>the ticket</h1>");
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+
+    const res = await h.controller.readTicket();
+    expect(res).toEqual({ ok: true, html: "<h1>the ticket</h1>" });
+  });
+
+  it("refuses to read before a folder is picked", async () => {
+    const h = harness();
+    const res = await h.controller.readTicket();
+    expect(res.ok).toBe(false);
+  });
+
+  it("refuses when the ticket does not exist yet", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-read-none-"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+    const res = await h.controller.readTicket();
+    expect(res).toEqual({ ok: false, error: "no ticket yet" });
+  });
+
+  it("rejects a TICKET.html symlink that escapes the folder", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-read-symlink-"));
+    const outside = fs.mkdtempSync(path.join(TMP, "plan-read-outside-"));
+    const secret = path.join(outside, "secret.html");
+    fs.writeFileSync(secret, "<h1>secret</h1>");
+    fs.mkdirSync(path.join(folder, ".tentacles"), { recursive: true });
+    fs.symlinkSync(secret, path.join(folder, ".tentacles", "TICKET.html"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+
+    const res = await h.controller.readTicket();
+    expect(res.ok).toBe(false);
+  });
+});
+
 describe("PlanController — new refinement wipes only the ticket", () => {
   it("deletes only .tentacles/TICKET.html, keeps the docs, stops the session, and clears the folder", async () => {
     const folder = fs.mkdtempSync(path.join(TMP, "plan-wipe-"));

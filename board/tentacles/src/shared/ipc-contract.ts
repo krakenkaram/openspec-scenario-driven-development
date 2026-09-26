@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's twenty-four
+// Type-only IPC contract: the single source of truth for the board's twenty-five
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -262,6 +262,9 @@ export interface StartPlanSessionArgs {
 export type StartPlanSessionResult = { ok: true } | { ok: false; error: string };
 export type SendPlanTurnResult = { ok: true } | { ok: false; error: string };
 export type NewRefinementResult = { ok: true } | { ok: false; error: string };
+// The recorded folder's `.tentacles/TICKET.html` contents, for viewing the
+// ticket inside the app. Resolved and containment-guarded main-side.
+export type ReadTicketResult = { ok: true; html: string } | { ok: false; error: string };
 
 // Exact method → channel-name mapping: the single source of truth for the
 // boundary. Both the preload bridge and the main-process IPC registry are typed
@@ -290,6 +293,7 @@ export interface ChannelMap {
   startPlanSession: "board:startPlanSession";
   sendPlanTurn: "board:sendPlanTurn";
   openTicket: "board:openTicket";
+  readTicket: "board:readTicket";
   planChooseFolder: "board:planChooseFolder";
   newRefinement: "board:newRefinement";
 }
@@ -388,6 +392,10 @@ export interface ElectronAPI {
   // Open the recorded folder's `.tentacles/TICKET.html` in the OS-default app.
   // Resolved and containment-guarded main-side; the renderer supplies no path.
   openTicket(): Promise<OpenPathResult>;
+  // Read the recorded folder's `.tentacles/TICKET.html` contents for in-app
+  // viewing. Resolved and containment-guarded main-side; the renderer supplies
+  // no path.
+  readTicket(): Promise<ReadTicketResult>;
   // New refinement: stop the session and delete only the recorded folder's
   // `.tentacles/TICKET.html`, keeping the `.md` docs. Takes no path — it acts on
   // the recorded folder.
