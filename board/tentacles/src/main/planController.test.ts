@@ -119,6 +119,26 @@ describe("PlanController — the picked folder is authoritative main-process sta
     expect(h.runner.last()!.sent).toEqual(["my answer"]);
   });
 
+  it("rejects a send while a turn is in flight and never relays it to the agent", async () => {
+    const folder = fs.mkdtempSync(path.join(TMP, "plan-busy-"));
+    const h = harness({ folder });
+    await h.controller.chooseFolder();
+    await h.controller.startSession({ idea: "x" });
+
+    // The agent signals a turn is in flight.
+    h.runner.last()!.busy(true);
+
+    const rejected = await h.controller.sendTurn("too soon");
+    expect(rejected.ok).toBe(false);
+    expect(h.runner.last()!.sent).toEqual([]);
+
+    // Once the turn finishes, a send is accepted and relayed.
+    h.runner.last()!.busy(false);
+    const accepted = await h.controller.sendTurn("now ok");
+    expect(accepted).toEqual({ ok: true });
+    expect(h.runner.last()!.sent).toEqual(["now ok"]);
+  });
+
   it("does not itself probe for or write docs — the agent owns that", async () => {
     const folder = fs.mkdtempSync(path.join(TMP, "plan-nodocs-"));
     const h = harness({ folder });

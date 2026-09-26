@@ -110,6 +110,23 @@ describe("makeKiroAgentRunner — one run per turn, stream-json", () => {
     expect(partials[partials.length - 1]).toBeNull();
   });
 
+  it("refuses a concurrent send while a turn is in flight, then allows one after it exits", () => {
+    const sp = fakeSpawner();
+    const runner = makeKiroAgentRunner(sp.spawn);
+    const session = runner.start({ skill: "s", folderPath: "/p", firstMessage: "hi", onTurn: () => {} });
+    expect(sp.spawned).toHaveLength(1);
+
+    // A send arrives while the first turn's child has NOT exited — no second process.
+    session.send("too soon");
+    expect(sp.spawned).toHaveLength(1);
+
+    // Once the in-flight turn exits cleanly, a send spawns the next (resumed) turn.
+    sp.last().emitExit(0);
+    session.send("now ok");
+    expect(sp.spawned).toHaveLength(2);
+    expect(sp.last().opts).toEqual({ folderPath: "/p", message: "now ok", resume: true });
+  });
+
   it("keeps the session alive after a clean turn and resumes on send with stream-json", () => {
     const sp = fakeSpawner();
     const runner = makeKiroAgentRunner(sp.spawn);

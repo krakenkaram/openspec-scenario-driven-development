@@ -58,4 +58,26 @@ describe("phase rail — PLAN / BUILD / RELEASE", () => {
     // Same selection still drives the main panel.
     expect(await screen.findAllByText("repo-a")).not.toHaveLength(0);
   });
+
+  it("preserves BUILD-local UI state (the sidebar search) across a phase round-trip", async () => {
+    selectRepo("/Code/repo-a/.git");
+    mockApi({
+      getStatus: async () => makeStatus([makeChange({ repositoryId: "/Code/repo-a/.git", repositoryName: "repo-a" })]),
+    } as never);
+    render(<App />);
+    const user = userEvent.setup();
+
+    // Type into the sidebar's search box — state that lives inside the BUILD
+    // subtree, so it is lost if BUILD unmounts on a phase switch.
+    const search = await screen.findByPlaceholderText(/search repositories/i);
+    await user.type(search, "repo-a");
+    expect(search).toHaveValue("repo-a");
+
+    await user.click(screen.getByRole("button", { name: "PLAN" }));
+    expect(screen.getByTestId("plan-phase")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "BUILD" }));
+
+    // The search text is still there — BUILD was hidden, not unmounted.
+    expect(screen.getByPlaceholderText(/search repositories/i)).toHaveValue("repo-a");
+  });
 });

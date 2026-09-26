@@ -47,6 +47,10 @@ export function makePlanController(
 ): PlanController {
   let session: AgentSession | null = null;
   let selectedFolder: string | null = null;
+  // True from the moment a turn starts until it completes. A send is refused
+  // while busy so the untrusted renderer cannot drive two overlapping turns
+  // into one resumed conversation.
+  let busy = false;
   // Monotonic id identifying the live session. Callbacks captured for a session
   // whose id is no longer current are dropped, so a dying process cannot leak a
   // late turn into a session that replaced it.
@@ -60,6 +64,7 @@ export function makePlanController(
     const handle = session;
     session = null;
     currentId = 0;
+    busy = false;
     handle?.stop();
   }
 
@@ -95,13 +100,17 @@ export function makePlanController(
         onStream: (partial) => {
           if (id === currentId) pushStream(partial);
         },
-        onBusy: (busy) => {
-          if (id === currentId) pushBusy(busy);
+        onBusy: (busyNow) => {
+          if (id === currentId) {
+            busy = busyNow;
+            pushBusy(busyNow);
+          }
         },
         onExit: () => {
           if (id !== currentId) return;
           session = null;
           currentId = 0;
+          busy = false;
           pushEnded();
         },
       });
@@ -110,6 +119,7 @@ export function makePlanController(
 
     async sendTurn(text: string): Promise<SendPlanTurnResult> {
       if (!session) return { ok: false, error: "no active session" };
+      if (busy) return { ok: false, error: "a turn is already in progress" };
       session.send(text);
       return { ok: true };
     },

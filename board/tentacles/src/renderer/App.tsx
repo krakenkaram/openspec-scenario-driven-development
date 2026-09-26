@@ -551,33 +551,35 @@ export default function App() {
       </Group>
       <div className="app-body">
         <PhaseRail active={activePhase} onSelect={setActivePhase} />
-        {activePhase === "build" && (
-          <div className="layout" ref={layoutRef}>
-            <Sidebar
-              groups={grouped}
-              expanded={expanded}
-              selection={selection}
-              width={sidebarWidth}
-              onToggle={toggleRepo}
-              onSelectRepo={selectRepo}
-              onSelectWorktree={selectWorktree}
-              onDeleteWorktree={onDeleteWorktree}
-            />
-            <div
-              className="sb-resize"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize sidebar"
-              onMouseDown={startResize}
-            />
-            <main
-              key={selection ? (selection.kind === "repo" ? `r:${selection.repositoryId}` : `w:${selection.repoPath}`) : "none"}
-              className="panel-fade"
-            >
-              {main}
-            </main>
-          </div>
-        )}
+        <div
+          className="layout"
+          ref={layoutRef}
+          style={{ display: activePhase === "build" ? "flex" : "none" }}
+        >
+          <Sidebar
+            groups={grouped}
+            expanded={expanded}
+            selection={selection}
+            width={sidebarWidth}
+            onToggle={toggleRepo}
+            onSelectRepo={selectRepo}
+            onSelectWorktree={selectWorktree}
+            onDeleteWorktree={onDeleteWorktree}
+          />
+          <div
+            className="sb-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={startResize}
+          />
+          <main
+            key={selection ? (selection.kind === "repo" ? `r:${selection.repositoryId}` : `w:${selection.repoPath}`) : "none"}
+            className="panel-fade"
+          >
+            {main}
+          </main>
+        </div>
         <div
           className="plan-host"
           style={{

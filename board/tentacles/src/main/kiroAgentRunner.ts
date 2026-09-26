@@ -86,7 +86,12 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
       };
 
       const runTurn = (message: string, resume: boolean) => {
-        if (ended) return;
+        // Single-flight: refuse to start a turn while one is already in flight,
+        // so a duplicate or hostile send can never spawn a second concurrent
+        // process against the same resumed conversation. The renderer disables
+        // its box while busy, but the renderer is untrusted — this is the guard
+        // that actually holds.
+        if (ended || active) return;
         onBusy?.(true);
         const child = spawnAgent({ folderPath, message, resume });
         active = child;
@@ -109,10 +114,10 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
         };
 
         const emitTurn = (turn: PlanTurn) => {
-          if (!ended) onTurn(turn);
+          if (!ended && child === active) onTurn(turn);
         };
         const pushPartial = () => {
-          if (ended) return;
+          if (ended || child !== active) return;
           if (lineBuf.length === 0) {
             onStream?.(null);
             return;
@@ -137,6 +142,7 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
         };
 
         child.stdout.on("data", (chunk) => {
+          if (ended || child !== active) return;
           jsonBuf += chunk.toString();
           const records = jsonBuf.split("\n");
           jsonBuf = records.pop() ?? "";
@@ -155,6 +161,7 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
         });
 
         child.on("error", (err) => {
+          if (ended || child !== active) return;
           emitTurn({ speaker: "error", text: err?.message ?? String(err) });
           endSession();
         });
@@ -164,13 +171,14 @@ export function makeKiroAgentRunner(spawnAgent: SpawnAgent = spawnKiroChat): Age
           if (lineBuf.trim().length > 0) emitTurn(attributeSticky(lineBuf));
           lineBuf = "";
           onStream?.(null);
-          active = null;
           if (code != null && code !== 0) {
             emitTurn({ speaker: "error", text: `agent exited with code ${code}` });
             endSession();
             return;
           }
-          // Clean turn completion: the session stays alive for the next send.
+          // Clean turn completion: free the slot and keep the session alive for
+          // the next send.
+          active = null;
           onBusy?.(false);
         });
       };
