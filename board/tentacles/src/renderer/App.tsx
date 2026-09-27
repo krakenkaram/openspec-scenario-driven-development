@@ -7,6 +7,7 @@ import { groupWorktrees } from "../shared/grouping";
 import { Modal, type ModalSection } from "./modal";
 import { Sidebar, type Selection } from "./sidebar";
 import { DiffPanel } from "./diffPanel";
+import { ProposalSummary } from "./proposalSummary";
 import { SettingsPanel } from "./settings";
 import { PhaseRail, type Phase } from "./phaseRail";
 import { PlanView } from "./plan";
@@ -421,6 +422,7 @@ export default function App() {
             />
           ))}
         </Stack>
+        <ProposalSummary changes={worktreeChanges} />
         <DiffPanel key={selectedWorktreePath} repoPath={selectedWorktreePath} />
       </Stack>
     );
