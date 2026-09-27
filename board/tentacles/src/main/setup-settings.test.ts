@@ -31,6 +31,7 @@ describe("parseSettings — targets (backward compatible)", () => {
 });
 
 describe("settings handlers — targets round-trip", () => {
+  const DEF_ASSIGN = { feature: "atdd-driven", refactor: "refactor", testing: null };
   function fakeSettings(initial: Settings = {}): SettingsDeps {
     let store: Settings = { ...initial };
     let root = initial.root ?? "";
@@ -54,16 +55,16 @@ describe("settings handlers — targets round-trip", () => {
     const handlers = makeHandlers(core, () => args, undefined, settings);
 
     const res = handlers.setSettings({} as never, { root: "/Code", targets: ["kiro", "kiro-crew"] });
-    expect(res).toEqual({ ok: true, root: "/Code", notifications: "enabled", targets: ["kiro", "kiro-crew"] });
+    expect(res).toEqual({ ok: true, root: "/Code", notifications: "enabled", targets: ["kiro", "kiro-crew"], schemaAssignment: DEF_ASSIGN });
 
-    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "enabled", targets: ["kiro", "kiro-crew"] });
+    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "enabled", targets: ["kiro", "kiro-crew"], schemaAssignment: DEF_ASSIGN });
   });
 
   it("getSettings returns an empty targets list when none are persisted", () => {
     const settings = fakeSettings({ root: "/Code" });
     const args: Args = { repos: [], root: "/Code", depth: 1 };
     const handlers = makeHandlers(core, () => args, undefined, settings);
-    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "enabled", targets: [] });
+    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "enabled", targets: [], schemaAssignment: DEF_ASSIGN });
   });
 
   it("preserves a non-empty stored targets selection when the payload omits targets", () => {
@@ -72,8 +73,8 @@ describe("settings handlers — targets round-trip", () => {
     const handlers = makeHandlers(core, () => args, undefined, settings);
 
     const res = handlers.setSettings({} as never, { root: "/Code", notifications: "muted" });
-    expect(res).toEqual({ ok: true, root: "/Code", notifications: "muted", targets: ["kiro", "kiro-crew"] });
-    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "muted", targets: ["kiro", "kiro-crew"] });
+    expect(res).toEqual({ ok: true, root: "/Code", notifications: "muted", targets: ["kiro", "kiro-crew"], schemaAssignment: DEF_ASSIGN });
+    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "muted", targets: ["kiro", "kiro-crew"], schemaAssignment: DEF_ASSIGN });
   });
 
   it("preserves stored notifications when the payload omits it but supplies targets", () => {
@@ -82,7 +83,7 @@ describe("settings handlers — targets round-trip", () => {
     const handlers = makeHandlers(core, () => args, undefined, settings);
 
     const res = handlers.setSettings({} as never, { root: "/Code", targets: ["claude"] });
-    expect(res).toEqual({ ok: true, root: "/Code", notifications: "muted", targets: ["claude"] });
-    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "muted", targets: ["claude"] });
+    expect(res).toEqual({ ok: true, root: "/Code", notifications: "muted", targets: ["claude"], schemaAssignment: DEF_ASSIGN });
+    expect(handlers.getSettings()).toEqual({ root: "/Code", notifications: "muted", targets: ["claude"], schemaAssignment: DEF_ASSIGN });
   });
 });

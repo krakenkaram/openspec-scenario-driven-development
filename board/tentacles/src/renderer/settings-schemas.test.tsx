@@ -28,10 +28,11 @@ const INSTALLED_ATDD: SchemaInfo = {
   path: "/home/u/.local/share/openspec/schemas/atdd-driven",
 };
 
-async function openSchemasTab(user: ReturnType<typeof userEvent.setup>) {
+async function openSchemasTab(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
   await user.click(screen.getByTitle("Settings"));
   await waitFor(() => expect(screen.getByRole("tab", { name: "General" })).toBeInTheDocument());
   await user.click(screen.getByRole("tab", { name: "Schemas" }));
+  return (await screen.findByText("Available schemas")).closest('[role="tabpanel"]') as HTMLElement;
 }
 
 describe("settings — Schemas tab: scope pills and install/uninstall", () => {
@@ -39,35 +40,35 @@ describe("settings — Schemas tab: scope pills and install/uninstall", () => {
     mockApi({ listSchemas: vi.fn().mockResolvedValue([LOCAL_ATDD, GLOBAL_SPEC]) });
     const user = userEvent.setup();
     render(<App />);
-    await openSchemasTab(user);
+    const panel = await openSchemasTab(user);
 
-    expect(await screen.findByText("atdd-driven")).toBeInTheDocument();
-    expect(screen.getByText("ATDD-driven schema.")).toBeInTheDocument();
-    expect(screen.getByText("grill → proposal → specs → design → tasks")).toBeInTheDocument();
-    expect(screen.getByText("/repo/openspec/schemas/atdd-driven")).toBeInTheDocument();
-    expect(screen.getByText("/pkg/schemas/spec-driven")).toBeInTheDocument();
+    expect(within(panel).getByText("atdd-driven")).toBeInTheDocument();
+    expect(within(panel).getByText("ATDD-driven schema.")).toBeInTheDocument();
+    expect(within(panel).getByText("grill → proposal → specs → design → tasks")).toBeInTheDocument();
+    expect(within(panel).getByText("/repo/openspec/schemas/atdd-driven")).toBeInTheDocument();
+    expect(within(panel).getByText("/pkg/schemas/spec-driven")).toBeInTheDocument();
   });
 
   it("shows a Local pill for an app schema and a Global pill for a CLI schema", async () => {
     mockApi({ listSchemas: vi.fn().mockResolvedValue([LOCAL_ATDD, GLOBAL_SPEC]) });
     const user = userEvent.setup();
     render(<App />);
-    await openSchemasTab(user);
-    await screen.findByText("atdd-driven");
+    const panel = await openSchemasTab(user);
+    await within(panel).findByText("atdd-driven");
 
-    expect(screen.getByText("Local")).toBeInTheDocument();
-    expect(screen.getByText("Global")).toBeInTheDocument();
+    expect(within(panel).getByText("Local")).toBeInTheDocument();
+    expect(within(panel).getByText("Global")).toBeInTheDocument();
   });
 
   it("offers Install on a local schema and no install/uninstall control on a package schema", async () => {
     mockApi({ listSchemas: vi.fn().mockResolvedValue([LOCAL_ATDD, GLOBAL_SPEC]) });
     const user = userEvent.setup();
     render(<App />);
-    await openSchemasTab(user);
-    await screen.findByText("atdd-driven");
+    const panel = await openSchemasTab(user);
+    await within(panel).findByText("atdd-driven");
 
-    expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /uninstall/i })).toBeNull();
+    expect(within(panel).getByRole("button", { name: "Install" })).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /uninstall/i })).toBeNull();
   });
 
   it("installs a local schema, then refreshes so the row flips to Global with Uninstall", async () => {
@@ -118,8 +119,8 @@ describe("settings — Schemas tab: scope pills and install/uninstall", () => {
     mockApi({ listSchemas: vi.fn().mockResolvedValue([LOCAL_ATDD, GLOBAL_SPEC]) });
     const user = userEvent.setup();
     render(<App />);
-    await openSchemasTab(user);
-    await screen.findByText("atdd-driven");
+    const panel = await openSchemasTab(user);
+    await within(panel).findByText("atdd-driven");
 
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).queryByRole("button", { name: /create|new schema|add schema|edit/i })).toBeNull();

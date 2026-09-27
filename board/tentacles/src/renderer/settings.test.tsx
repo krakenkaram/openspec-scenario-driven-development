@@ -30,7 +30,7 @@ describe("settings panel", () => {
     await user.type(input, "/new/root");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(setSettings).toHaveBeenCalledWith({ root: "/new/root", notifications: "enabled", targets: [] });
+    expect(setSettings).toHaveBeenCalledWith({ root: "/new/root", notifications: "enabled", targets: [], schemaAssignment: { feature: "atdd-driven", refactor: "refactor", testing: null } });
     // a successful save closes the panel and re-fetches the board
     await waitFor(() => expect(screen.queryByLabelText("Scan root directory")).toBeNull());
     await waitFor(() => expect(getStatus.mock.calls.length).toBeGreaterThan(1));
@@ -109,7 +109,7 @@ describe("settings panel", () => {
     await user.click(screen.getByLabelText("Mute notifications"));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(setSettings).toHaveBeenCalledWith({ root: "/root", notifications: "muted", targets: [] });
+    expect(setSettings).toHaveBeenCalledWith({ root: "/root", notifications: "muted", targets: [], schemaAssignment: { feature: "atdd-driven", refactor: "refactor", testing: null } });
   });
 
   it("defaults the notification control to on when the setting is absent", async () => {

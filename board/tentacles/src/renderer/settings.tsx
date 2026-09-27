@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Badge, Button, Checkbox, Group, Modal, Radio, Stack, Tabs, Text, TextInput } from "@mantine/core";
-import type { NotificationSetting, ResultRow, SchemaInfo, Target } from "../shared/ipc-contract";
+import { Badge, Button, Checkbox, Group, Modal, NativeSelect, Radio, Stack, Tabs, Text, TextInput } from "@mantine/core";
+import type { NotificationSetting, ResultRow, SchemaAssignment, SchemaInfo, Target, WorkType } from "../shared/ipc-contract";
 
 const NOTIFICATION_OPTIONS: Array<{ value: NotificationSetting; label: string }> = [
   { value: "enabled", label: "Notifications on" },
@@ -13,6 +13,29 @@ const TARGET_LABELS: { id: Target; label: string }[] = [
   { id: "kiro", label: "Kiro" },
   { id: "kiro-crew", label: "Kiro Crew" },
 ];
+
+const WORK_TYPE_LABELS: { id: WorkType; label: string }[] = [
+  { id: "feature", label: "Feature" },
+  { id: "refactor", label: "Refactor" },
+  { id: "testing", label: "Testing" },
+];
+
+const DEFAULT_ASSIGNMENT: SchemaAssignment = { feature: "atdd-driven", refactor: "refactor", testing: null };
+
+// The select value standing for None (OpenSpec circumvented). Empty string maps
+// to null in the assignment.
+const NONE_VALUE = "";
+
+// Complete a possibly-partial persisted assignment with the seeded defaults, so
+// the controls always reflect a value for each work type. A stored null (None)
+// is preserved.
+function resolveAssignment(a: Partial<Record<WorkType, string | null>> | undefined): SchemaAssignment {
+  const out = { ...DEFAULT_ASSIGNMENT };
+  for (const { id } of WORK_TYPE_LABELS) {
+    if (a && id in a) out[id] = a[id] ?? null;
+  }
+  return out;
+}
 
 type Tab = "general" | "setup" | "schemas";
 
@@ -90,6 +113,7 @@ export function SettingsPanel({
   const [root, setRoot] = useState("");
   const [notifications, setNotifications] = useState<NotificationSetting>("enabled");
   const [targets, setTargets] = useState<Target[]>([]);
+  const [assignment, setAssignment] = useState<SchemaAssignment>(DEFAULT_ASSIGNMENT);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [installResult, setInstallResult] = useState<ResultRow[] | null>(null);
@@ -111,6 +135,7 @@ export function SettingsPanel({
         setRoot(s.root);
         setNotifications(s.notifications ?? "enabled");
         setTargets(Array.isArray(s.targets) ? s.targets : []);
+        setAssignment(resolveAssignment(s.schemaAssignment));
       } catch {
         /* leave blank */
       }
@@ -132,7 +157,7 @@ export function SettingsPanel({
     setSaving(true);
     setError("");
     try {
-      const res = await window.electronAPI.setSettings({ root, notifications, targets });
+      const res = await window.electronAPI.setSettings({ root, notifications, targets, schemaAssignment: assignment });
       if (res.ok) {
         onSaved();
         onClose();
@@ -245,6 +270,26 @@ export function SettingsPanel({
                 ))}
               </Stack>
             </Radio.Group>
+
+            <Stack gap="xs">
+              <Text fw={600} size="sm">
+                Schema per work type
+              </Text>
+              {WORK_TYPE_LABELS.map(({ id, label }) => (
+                <NativeSelect
+                  key={id}
+                  label={`${label} schema`}
+                  value={assignment[id] ?? NONE_VALUE}
+                  data={[{ value: NONE_VALUE, label: "None" }, ...schemas.map((s) => ({ value: s.name, label: s.name }))]}
+                  onChange={(e) =>
+                    setAssignment((prev) => ({
+                      ...prev,
+                      [id]: e.currentTarget.value === NONE_VALUE ? null : e.currentTarget.value,
+                    }))
+                  }
+                />
+              ))}
+            </Stack>
           </Stack>
         </Tabs.Panel>
 

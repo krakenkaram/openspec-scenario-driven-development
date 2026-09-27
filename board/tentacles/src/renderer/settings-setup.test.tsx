@@ -45,7 +45,7 @@ describe("settings — Setup tab: target selection", () => {
     await user.click(screen.getByRole("checkbox", { name: "Kiro Crew" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(setSettings).toHaveBeenCalledWith({ root: "/Code", notifications: "enabled", targets: ["kiro", "kiro-crew"] });
+    expect(setSettings).toHaveBeenCalledWith({ root: "/Code", notifications: "enabled", targets: ["kiro", "kiro-crew"], schemaAssignment: { feature: "atdd-driven", refactor: "refactor", testing: null } });
   });
 
   it("rehydrates persisted targets into the checkboxes on open", async () => {
