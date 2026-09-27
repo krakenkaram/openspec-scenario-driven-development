@@ -34,8 +34,10 @@ import type {
   OpenPathResult,
   SchemaInfo,
   SchemaActionResult,
+  SchemaAssignment,
   StatusResult,
   Target,
+  WorkType,
 } from "../shared/ipc-contract";
 
 export type { NotificationSetting } from "../shared/ipc-contract";
@@ -1065,6 +1067,10 @@ export interface Settings {
   root?: string;
   notifications?: NotificationSetting;
   targets?: Target[];
+  // The raw persisted assignment: possibly partial or absent. Sanitised on read
+  // (parseSchemaAssignment) and completed with seeded defaults
+  // (resolveSchemaAssignment). null for a work type means None.
+  schemaAssignment?: Partial<Record<WorkType, string | null>>;
 }
 
 // Normalise any persisted/incoming value to a valid tri-state, defaulting to
@@ -1086,6 +1092,8 @@ export function parseSettings(text: string): Settings {
       }
       const targets = parseTargets((o as { targets?: unknown }).targets);
       if (targets.length) out.targets = targets;
+      const schemaAssignment = parseSchemaAssignment((o as { schemaAssignment?: unknown }).schemaAssignment);
+      if (Object.keys(schemaAssignment).length) out.schemaAssignment = schemaAssignment;
       return out;
     }
   } catch {
@@ -1097,6 +1105,42 @@ export function parseSettings(text: string): Settings {
 // The effective notification preference for a persisted settings object.
 export function resolveNotifications(settings: Settings): NotificationSetting {
   return parseNotificationSetting(settings.notifications);
+}
+
+// The three fixed work types, in display order.
+export const WORK_TYPES: WorkType[] = ["feature", "refactor", "testing"];
+
+// Seeded defaults: Feature → atdd-driven, Refactor → refactor, Testing → None.
+export const DEFAULT_SCHEMA_ASSIGNMENT: SchemaAssignment = {
+  feature: "atdd-driven",
+  refactor: "refactor",
+  testing: null,
+};
+
+// Sanitise an untrusted stored assignment: keep only the three known work-type
+// keys, and only values that are a schema name (string) or None (null). Unknown
+// keys and any other value are dropped. Mirrors parseTargets / parseNotificationSetting.
+export function parseSchemaAssignment(value: unknown): Partial<Record<WorkType, string | null>> {
+  const out: Partial<Record<WorkType, string | null>> = {};
+  if (value && typeof value === "object") {
+    for (const wt of WORK_TYPES) {
+      const v = (value as Record<string, unknown>)[wt];
+      if (typeof v === "string" || v === null) out[wt] = v;
+    }
+  }
+  return out;
+}
+
+// The effective assignment for a persisted settings object: a complete mapping
+// over the three work types, filling each unset work type with its seeded default.
+// A stored null (None) is a valid value and is preserved.
+export function resolveSchemaAssignment(settings: Settings): SchemaAssignment {
+  const stored = parseSchemaAssignment(settings.schemaAssignment);
+  const out = {} as SchemaAssignment;
+  for (const wt of WORK_TYPES) {
+    out[wt] = wt in stored ? (stored[wt] as string | null) : DEFAULT_SCHEMA_ASSIGNMENT[wt];
+  }
+  return out;
 }
 
 export function expandTilde(p: string, home: string = os.homedir()): string {

@@ -164,18 +164,31 @@ export interface DiffFile {
 }
 export type DiffResult = { ok: true; files: DiffFile[] } | { ok: false; error: string };
 
+// A fixed work type — the kind of work a change represents — used as the key of
+// the schema assignment. Distinct from Change.type, which has no "testing":
+// "testing" exists here only as a mapping key, not as a modelled change state.
+export type WorkType = "feature" | "refactor" | "testing";
+
+// The schema assignment: each fixed work type maps to a schema NAME, or to null
+// ("None" — OpenSpec is circumvented for that work type). A resolved assignment
+// always covers exactly the three work types. Records intent only; nothing reads
+// it to pick a schema when work begins.
+export type SchemaAssignment = Record<WorkType, string | null>;
+
 export interface BoardSettings {
   root: string;
   notifications: NotificationSetting;
   targets: Target[];
+  schemaAssignment: SchemaAssignment;
 }
 export interface SetSettingsArgs {
   root: string;
   notifications?: NotificationSetting;
   targets?: Target[];
+  schemaAssignment?: SchemaAssignment;
 }
 export type SetSettingsResult =
-  | { ok: true; root: string; notifications: NotificationSetting; targets: Target[] }
+  | { ok: true; root: string; notifications: NotificationSetting; targets: Target[]; schemaAssignment: SchemaAssignment }
   | { ok: false; error: string };
 
 // How completion notifications are surfaced: a full banner with sound, a silent

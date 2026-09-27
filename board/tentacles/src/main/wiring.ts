@@ -19,6 +19,8 @@ import {
   parseNotificationSetting,
   resolveNotifications,
   parseTargets,
+  parseSchemaAssignment,
+  resolveSchemaAssignment,
   planInstall,
   planDoctorChecks,
   missingEntries,
@@ -252,6 +254,7 @@ export function makeHandlers(
       root: settings ? settings.getRoot() : getArgs().root,
       notifications: settings ? resolveNotifications(settings.read()) : "enabled",
       targets: settings ? parseTargets(settings.read().targets) : [],
+      schemaAssignment: resolveSchemaAssignment(settings ? settings.read() : {}),
     }),
     setSettings: (_event: IpcMainInvokeEvent, payload: SetSettingsArgs | undefined): SetSettingsResult => {
       if (!settings) return { ok: false, error: "settings unavailable" };
@@ -259,9 +262,10 @@ export function makeHandlers(
       if (!res.ok) return res;
       const notifications = parseNotificationSetting(payload?.notifications ?? settings.read().notifications);
       const targets = parseTargets(payload?.targets ?? settings.read().targets);
-      settings.write({ root: res.root, notifications, targets });
+      const schemaAssignment = parseSchemaAssignment(payload?.schemaAssignment ?? settings.read().schemaAssignment);
+      settings.write({ root: res.root, notifications, targets, schemaAssignment });
       settings.setRoot(res.root);
-      return { ok: true, root: res.root, notifications, targets };
+      return { ok: true, root: res.root, notifications, targets, schemaAssignment: resolveSchemaAssignment({ schemaAssignment }) };
     },
     install: async (_event: IpcMainInvokeEvent, payload: InstallArgs | undefined): Promise<InstallResult> => {
       if (!setup) return { steps: [] };

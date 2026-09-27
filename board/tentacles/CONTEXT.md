@@ -22,6 +22,18 @@ artifact exists. For example, grilling is complete once `proposal.md` exists —
 interview is still in progress. The final planning phase, having no successor artifact, is
 complete once the plan as a whole is complete.
 
+### Work type
+The kind of work a piece of work is: one of a fixed set — **Feature**, **Refactor**, or **Testing**.
+The work type selects which OpenSpec **Schema** the workflow uses, via a user-defined mapping in
+Settings (see **Schema assignment**). A work type may be mapped to **None**, meaning work of that
+kind runs with no schema — OpenSpec is circumvented for it.
+_Avoid_: Change kind, category, mode.
+
+### Schema assignment
+The user-defined mapping, held in Settings, from each **Work type** to a **Schema** (or to None). It
+records intent only; it does not itself start or run any work.
+_Avoid_: Schema config, workflow mapping, binding.
+
 ### Repository
 A git repository the board surveys, identified by its shared git common-dir. One repository owns one
 or more Worktrees. Its display label is derived from the repository, not from any single worktree
