@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, within, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { makeChange, makeStatus, mockApi, phase } from "./test-fixtures";
+import type { AppNotification } from "../shared/ipc-contract";
 
 beforeEach(() => localStorage.clear());
 
@@ -52,21 +53,29 @@ describe("sidebar lists repositories as expandable rows", () => {
 });
 
 describe("layout: top bar stays, sidebar is chrome-free, nothing selected shows a prompt", () => {
-  it("keeps the top-bar controls and gives the sidebar no chrome of its own", async () => {
+  it("hosts the notification and settings controls in the sidebar, not the top bar", async () => {
     mockApi({ getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)) });
     render(<App />);
     await screen.findByText("wings-core");
 
-    // top bar controls
-    expect(screen.getByText("Tentacles")).toBeInTheDocument();
-    expect(screen.getByTitle("Settings")).toBeInTheDocument();
-    expect(screen.queryByTitle("Toggle dark / light")).toBeNull();
-    expect(screen.getByText(/change\(s\) ·/)).toBeInTheDocument();
-
-    // sidebar carries no title / settings / status strip of its own
+    const topbar = document.querySelector(".topbar") as HTMLElement;
     const sidebar = document.querySelector(".sidebar") as HTMLElement;
+
+    // brand and live/stale status strip stay in the top bar
+    expect(within(topbar).getByText("Tentacles")).toBeInTheDocument();
+    expect(within(topbar).getByText(/change\(s\) ·/)).toBeInTheDocument();
+    expect(screen.queryByTitle("Toggle dark / light")).toBeNull();
+
+    // the notification and settings controls now live in the sidebar
+    expect(within(sidebar).getByTitle("Notifications")).toBeInTheDocument();
+    expect(within(sidebar).getByTitle("Settings")).toBeInTheDocument();
+
+    // and no longer in the top bar
+    expect(within(topbar).queryByTitle("Notifications")).toBeNull();
+    expect(within(topbar).queryByTitle("Settings")).toBeNull();
+
+    // sidebar still carries no title or status strip of its own
     expect(sidebar.querySelector("h1")).toBeNull();
-    expect(within(sidebar).queryByTitle("Settings")).toBeNull();
     expect(within(sidebar).queryByText(/change\(s\) ·/)).toBeNull();
   });
 
@@ -384,5 +393,46 @@ describe("the sidebar repository search", () => {
 
     expect(screen.getByText("wings-core")).toBeTruthy();
     expect(screen.queryByText("lonely")).toBeNull();
+  });
+});
+
+describe("the sidebar footer controls drive their existing behaviour", () => {
+  it("opens the settings panel when the sidebar settings control is clicked", async () => {
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)),
+      getSettings: vi.fn().mockResolvedValue({ root: "/old/root", notifications: "enabled" }),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const sidebar = (await screen.findByText("wings-core")).closest(".sidebar") as HTMLElement;
+
+    await user.click(within(sidebar).getByTitle("Settings"));
+
+    expect(await screen.findByLabelText("Scan root directory")).toBeInTheDocument();
+  });
+
+  it("toggles the notifications panel and clears the unread badge from the sidebar bell", async () => {
+    let handler: ((n: AppNotification) => void) | undefined;
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus(twoRepos(), 2)),
+      onNotification: vi.fn((cb: (n: AppNotification) => void) => {
+        handler = cb;
+        return () => {};
+      }),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const sidebar = (await screen.findByText("wings-core")).closest(".sidebar") as HTMLElement;
+
+    act(() => handler?.({ title: "grill complete", body: "my-change · grill", at: 1000 }));
+    // an unread notification surfaces the badge with a count
+    const dot = sidebar.querySelector("[data-bell-dot]") as HTMLElement;
+    expect(dot).not.toBeNull();
+    expect(dot.textContent).toBe("1");
+
+    await user.click(within(sidebar).getByTitle("Notifications"));
+    // panel opens with the notification, and opening clears the unread count
+    expect(await screen.findByText("grill complete")).toBeInTheDocument();
+    expect((sidebar.querySelector("[data-bell-dot]") as HTMLElement).textContent).toBe("");
   });
 });

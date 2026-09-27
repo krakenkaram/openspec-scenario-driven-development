@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionIcon, Box, Button, Center, Divider, Group, List, Loader, MantineProvider, Modal as MantineModal, Paper, ScrollArea, Stack, Text, Title } from "@mantine/core";
+import { Box, Button, Center, Group, List, Loader, MantineProvider, Modal as MantineModal, Stack, Text, Title } from "@mantine/core";
 import type { AppNotification, Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -444,97 +444,6 @@ export default function App() {
           </Title>
         </Group>
         <Group gap="xs" wrap="nowrap">
-          <Box style={{ position: "relative" }}>
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              className="bell"
-              title="Notifications"
-              aria-label="Notifications"
-              style={{ position: "relative", overflow: "visible" }}
-              onClick={() => {
-                setBellOpen((o) => !o);
-                setUnread(0);
-              }}
-            >
-              🔔
-              {notes.length > 0 && (
-                <Box
-                  data-bell-dot
-                  style={{
-                    position: "absolute",
-                    top: unread > 0 ? -4 : -2,
-                    right: unread > 0 ? -4 : -2,
-                    minWidth: unread > 0 ? 16 : 9,
-                    height: unread > 0 ? 16 : 9,
-                    padding: unread > 0 ? "0 4px" : 0,
-                    borderRadius: 999,
-                    background: "var(--mantine-color-magenta-6)",
-                    color: "#fff",
-                    fontSize: 10,
-                    lineHeight: unread > 0 ? "16px" : "9px",
-                    textAlign: "center",
-                    pointerEvents: "none",
-                    border: "1.5px solid var(--mantine-color-body)",
-                  }}
-                >
-                  {unread > 0 ? (unread > 9 ? "9+" : unread) : ""}
-                </Box>
-              )}
-            </ActionIcon>
-            {bellOpen && (
-              <>
-                <Box
-                  onClick={() => setBellOpen(false)}
-                  style={{ position: "fixed", inset: 0, zIndex: 200 }}
-                  aria-hidden
-                />
-                <Paper
-                  withBorder
-                  shadow="md"
-                  radius="md"
-                  data-notifications-panel
-                  style={{ position: "absolute", right: 0, top: "100%", marginTop: 6, width: 340, zIndex: 201 }}
-                >
-                  <Group justify="space-between" px="sm" py="xs" wrap="nowrap">
-                    <Text fw={700} size="sm">
-                      Notifications
-                    </Text>
-                    {notes.length > 0 && (
-                      <Button variant="subtle" size="compact-xs" color="gray" onClick={() => setNotes([])}>
-                        Clear
-                      </Button>
-                    )}
-                  </Group>
-                  <Divider />
-                  {notes.length === 0 ? (
-                    <Text c="dimmed" size="sm" p="sm">
-                      No notifications yet.
-                    </Text>
-                  ) : (
-                    <ScrollArea.Autosize mah={360}>
-                      <Stack gap={0} p="xs">
-                        {notes.map((n, i) => (
-                          <Box key={`${n.at}\u0000${i}`} data-notification py={6} px="xs">
-                            <Text size="sm" fw={600}>
-                              {n.title}
-                            </Text>
-                            <Text size="xs">{n.body}</Text>
-                            <Text size="xs" c="dimmed">
-                              {new Date(n.at).toLocaleTimeString()}
-                            </Text>
-                          </Box>
-                        ))}
-                      </Stack>
-                    </ScrollArea.Autosize>
-                  )}
-                </Paper>
-              </>
-            )}
-          </Box>
-          <ActionIcon variant="subtle" color="gray" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
-            ⚙
-          </ActionIcon>
           <Group gap={8} wrap="nowrap" className="topbar-status" ml="xs">
             <Box
               component="span"
@@ -565,6 +474,16 @@ export default function App() {
             onSelectRepo={selectRepo}
             onSelectWorktree={selectWorktree}
             onDeleteWorktree={onDeleteWorktree}
+            notes={notes}
+            unread={unread}
+            bellOpen={bellOpen}
+            onToggleBell={() => {
+              setBellOpen((o) => !o);
+              setUnread(0);
+            }}
+            onCloseBell={() => setBellOpen(false)}
+            onClearNotes={() => setNotes([])}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
           <div
             className="sb-resize"

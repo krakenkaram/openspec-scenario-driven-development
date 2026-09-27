@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ActionIcon, Badge, Box, Group, Loader, Paper, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
-import type { RepositoryGroup } from "../shared/ipc-contract";
+import { ActionIcon, Badge, Box, Button, Divider, Group, Loader, Paper, ScrollArea, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
+import type { AppNotification, RepositoryGroup } from "../shared/ipc-contract";
 import { worktreeLeaves, worktreeStatus, worktreeDirName, type WorktreeLeaf } from "./worktrees";
 
 // The single active navigation scope. A repository selection scopes the main
@@ -242,6 +242,13 @@ export function Sidebar({
   onSelectRepo,
   onSelectWorktree,
   onDeleteWorktree,
+  notes,
+  unread,
+  bellOpen,
+  onToggleBell,
+  onCloseBell,
+  onClearNotes,
+  onOpenSettings,
 }: {
   groups: RepositoryGroup[];
   expanded: Set<string>;
@@ -251,6 +258,13 @@ export function Sidebar({
   onSelectRepo: (repositoryId: string) => void;
   onSelectWorktree: (repoPath: string) => void;
   onDeleteWorktree: (repoPath: string, branch: string | null) => void;
+  notes: AppNotification[];
+  unread: number;
+  bellOpen: boolean;
+  onToggleBell: () => void;
+  onCloseBell: () => void;
+  onClearNotes: () => void;
+  onOpenSettings: () => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -266,7 +280,11 @@ export function Sidebar({
       )
     : groups;
   return (
-    <Box component="aside" className="sidebar" style={{ width, flex: "0 0 auto", overflowY: "auto" }}>
+    <Box
+      component="aside"
+      className="sidebar"
+      style={{ width, flex: "0 0 auto", display: "flex", flexDirection: "column", minHeight: 0 }}
+    >
       <Box className="sidebar-head" p="sm">
         <TextInput
           size="xs"
@@ -279,20 +297,138 @@ export function Sidebar({
           onChange={(e) => setQuery(e.currentTarget.value)}
         />
       </Box>
-      <Stack gap={4} p="xs">
-        {shown.map((g) => (
-          <SidebarRepo
-            key={g.repositoryId}
-            group={g}
-            expanded={expanded.has(g.repositoryId)}
-            selection={selection}
-            onToggle={onToggle}
-            onSelectRepo={onSelectRepo}
-            onSelectWorktree={onSelectWorktree}
-            onDeleteWorktree={onDeleteWorktree}
-          />
-        ))}
-      </Stack>
+      <Box className="sidebar-list" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <Stack gap={4} p="xs">
+          {shown.map((g) => (
+            <SidebarRepo
+              key={g.repositoryId}
+              group={g}
+              expanded={expanded.has(g.repositoryId)}
+              selection={selection}
+              onToggle={onToggle}
+              onSelectRepo={onSelectRepo}
+              onSelectWorktree={onSelectWorktree}
+              onDeleteWorktree={onDeleteWorktree}
+            />
+          ))}
+        </Stack>
+      </Box>
+      <SidebarFooter
+        notes={notes}
+        unread={unread}
+        bellOpen={bellOpen}
+        onToggleBell={onToggleBell}
+        onCloseBell={onCloseBell}
+        onClearNotes={onClearNotes}
+        onOpenSettings={onOpenSettings}
+      />
     </Box>
+  );
+}
+
+function SidebarFooter({
+  notes,
+  unread,
+  bellOpen,
+  onToggleBell,
+  onCloseBell,
+  onClearNotes,
+  onOpenSettings,
+}: {
+  notes: AppNotification[];
+  unread: number;
+  bellOpen: boolean;
+  onToggleBell: () => void;
+  onCloseBell: () => void;
+  onClearNotes: () => void;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <Group className="sidebar-footer" gap="xs" wrap="nowrap" p="sm">
+      <Box style={{ position: "relative" }}>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          className="bell"
+          title="Notifications"
+          aria-label="Notifications"
+          style={{ position: "relative", overflow: "visible" }}
+          onClick={onToggleBell}
+        >
+          🔔
+          {notes.length > 0 && (
+            <Box
+              data-bell-dot
+              style={{
+                position: "absolute",
+                top: unread > 0 ? -4 : -2,
+                right: unread > 0 ? -4 : -2,
+                minWidth: unread > 0 ? 16 : 9,
+                height: unread > 0 ? 16 : 9,
+                padding: unread > 0 ? "0 4px" : 0,
+                borderRadius: 999,
+                background: "var(--mantine-color-magenta-6)",
+                color: "#fff",
+                fontSize: 10,
+                lineHeight: unread > 0 ? "16px" : "9px",
+                textAlign: "center",
+                pointerEvents: "none",
+                border: "1.5px solid var(--mantine-color-body)",
+              }}
+            >
+              {unread > 0 ? (unread > 9 ? "9+" : unread) : ""}
+            </Box>
+          )}
+        </ActionIcon>
+        {bellOpen && (
+          <>
+            <Box onClick={onCloseBell} style={{ position: "fixed", inset: 0, zIndex: 200 }} aria-hidden />
+            <Paper
+              withBorder
+              shadow="md"
+              radius="md"
+              data-notifications-panel
+              style={{ position: "absolute", left: 0, bottom: "100%", marginBottom: 6, width: 340, zIndex: 201 }}
+            >
+              <Group justify="space-between" px="sm" py="xs" wrap="nowrap">
+                <Text fw={700} size="sm">
+                  Notifications
+                </Text>
+                {notes.length > 0 && (
+                  <Button variant="subtle" size="compact-xs" color="gray" onClick={onClearNotes}>
+                    Clear
+                  </Button>
+                )}
+              </Group>
+              <Divider />
+              {notes.length === 0 ? (
+                <Text c="dimmed" size="sm" p="sm">
+                  No notifications yet.
+                </Text>
+              ) : (
+                <ScrollArea.Autosize mah={360}>
+                  <Stack gap={0} p="xs">
+                    {notes.map((n, i) => (
+                      <Box key={`${n.at}\u0000${i}`} data-notification py={6} px="xs">
+                        <Text size="sm" fw={600}>
+                          {n.title}
+                        </Text>
+                        <Text size="xs">{n.body}</Text>
+                        <Text size="xs" c="dimmed">
+                          {new Date(n.at).toLocaleTimeString()}
+                        </Text>
+                      </Box>
+                    ))}
+                  </Stack>
+                </ScrollArea.Autosize>
+              )}
+            </Paper>
+          </>
+        )}
+      </Box>
+      <ActionIcon variant="subtle" color="gray" onClick={onOpenSettings} title="Settings" aria-label="Settings">
+        ⚙
+      </ActionIcon>
+    </Group>
   );
 }

@@ -86,6 +86,7 @@
 .layout main::-webkit-scrollbar { display: none; }
 .sidebar { border-right: 1px solid var(--border); background: var(--surface); }
 .sidebar-head { border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.sidebar-footer { border-top: 1px solid var(--border); background: var(--surface); flex: 0 0 auto; }
 .sb-resize { flex: 0 0 5px; cursor: col-resize; background: var(--border); opacity: .5; }
 .sb-resize:hover { opacity: 1; background: var(--accent); }
 
