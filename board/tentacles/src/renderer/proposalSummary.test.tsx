@@ -171,6 +171,75 @@ describe("proposal summary above the branch diff", () => {
     expect(block.compareDocumentPosition(diff as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("skips a section whose heading is absent entirely, not just blank", async () => {
+    const proposalPath = "/Code/repo-a/openspec/changes/solo/proposal.md";
+    const c = doneProposalChange({ change: "solo", repoPath: "/Code/repo-a", repositoryId: "/Code/repo-a/.git", proposalPath });
+    expand("/Code/repo-a/.git");
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([c], 1)),
+      getDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
+      // the `## Why` heading is missing from the file altogether
+      readFile: vi.fn().mockResolvedValue({ ok: true, contents: "## Problem Statement\n\nA problem with no reason section.\n" }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle("/Code/repo-a"));
+
+    expect(await screen.findByText("A problem with no reason section.")).toBeInTheDocument();
+    const block = document.querySelector("[data-proposal-summary]") as HTMLElement;
+    expect(block.textContent).toContain("Problem Statement");
+    expect(block.textContent).not.toContain("Why");
+  });
+
+  it("shows only Why when the Problem Statement heading is absent", async () => {
+    const proposalPath = "/Code/repo-a/openspec/changes/solo/proposal.md";
+    const c = doneProposalChange({ change: "solo", repoPath: "/Code/repo-a", repositoryId: "/Code/repo-a/.git", proposalPath });
+    expand("/Code/repo-a/.git");
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([c], 1)),
+      getDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
+      // the `## Problem Statement` heading is missing from the file altogether
+      readFile: vi.fn().mockResolvedValue({ ok: true, contents: "## Why\n\nWhy with no Problem heading.\n" }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle("/Code/repo-a"));
+
+    expect(await screen.findByText("Why with no Problem heading.")).toBeInTheDocument();
+    const block = document.querySelector("[data-proposal-summary]") as HTMLElement;
+    expect(block.textContent).toContain("Why");
+    expect(block.textContent).not.toContain("Problem Statement");
+  });
+
+  it("repeats the Problem Statement and Why headings once per contributing proposal", async () => {
+    const p1 = "/Code/wt-x/openspec/changes/change-one/proposal.md";
+    const p2 = "/Code/wt-x/openspec/changes/change-two/proposal.md";
+    const c1 = doneProposalChange({ change: "change-one", repoPath: "/Code/wt-x", repositoryId: "/Code/r/.git", repositoryName: "r", proposalPath: p1 });
+    const c2 = doneProposalChange({ change: "change-two", repoPath: "/Code/wt-x", repositoryId: "/Code/r/.git", repositoryName: "r", proposalPath: p2 });
+    expand("/Code/r/.git");
+    mockApi({
+      getStatus: vi.fn().mockResolvedValue(makeStatus([c1, c2], 1)),
+      getDiff: vi.fn().mockResolvedValue({ ok: true, files: [] }),
+      readFile: vi.fn().mockImplementation(async (fp: string) => {
+        if (fp === p1) return { ok: true, contents: "## Problem Statement\n\nPROBLEM_ONE\n\n## Why\n\nWHY_ONE\n" };
+        if (fp === p2) return { ok: true, contents: "## Problem Statement\n\nPROBLEM_TWO\n\n## Why\n\nWHY_TWO\n" };
+        return { ok: false, error: "not found" };
+      }),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByTitle("/Code/wt-x"));
+
+    await screen.findByText("PROBLEM_ONE");
+    const block = document.querySelector("[data-proposal-summary]") as HTMLElement;
+    // each of the two proposals contributes its own pair of headings (grill Q4: repeat per proposal)
+    expect((block.textContent!.match(/Problem Statement/g) || []).length).toBe(2);
+    expect((block.textContent!.match(/Why/g) || []).length).toBe(2);
+  });
+
   it("skips an empty Why, showing only the Problem Statement", async () => {
     const proposalPath = "/Code/repo-a/openspec/changes/solo/proposal.md";
     const c = doneProposalChange({ change: "solo", repoPath: "/Code/repo-a", repositoryId: "/Code/repo-a/.git", proposalPath });
