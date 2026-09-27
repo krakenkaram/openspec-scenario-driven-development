@@ -139,7 +139,7 @@ describe("bootstrap startup coordinator", () => {
     });
 
     expect(instances).toHaveLength(1);
-    expect(order.filter((x) => x === "ipc")).toHaveLength(19); // nineteen channels
+    expect(order.filter((x) => x === "ipc")).toHaveLength(25); // twenty-five channels
     expect(order.indexOf("window")).toBeGreaterThan(order.lastIndexOf("ipc"));
     expect(order.indexOf("window")).toBeGreaterThan(order.indexOf("path"));
   });
@@ -208,6 +208,30 @@ describe("bootstrap startup coordinator", () => {
     });
     app.emit("window-all-closed");
     expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the PLAN session when the app quits", async () => {
+    const app = fakeApp();
+    const { FakeBrowserWindow } = makeFakeBrowserWindow();
+    const shutdown = vi.fn();
+    const plan = {
+      chooseFolder: vi.fn(),
+      startSession: vi.fn(),
+      sendTurn: vi.fn(),
+      openTicket: vi.fn(),
+      newRefinement: vi.fn(),
+      shutdown,
+    } as unknown as BootstrapDeps["plan"];
+    await bootstrap({
+      ...deps({ platform: "linux", plan }),
+      app: app as unknown as App,
+      BrowserWindow: FakeBrowserWindow as unknown as typeof BrowserWindow,
+      ipcMain: { handle() {} } as unknown as IpcMain,
+    });
+
+    app.emit("before-quit");
+
+    expect(shutdown).toHaveBeenCalledTimes(1);
   });
 
   it("does not prevent or hide window close on non-darwin platforms", async () => {

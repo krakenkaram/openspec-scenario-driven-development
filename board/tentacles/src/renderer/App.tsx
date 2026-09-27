@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionIcon, Box, Button, Center, Divider, Group, List, Loader, MantineProvider, Modal as MantineModal, Paper, ScrollArea, Stack, Text, Title, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Box, Button, Center, Divider, Group, List, Loader, MantineProvider, Modal as MantineModal, Paper, ScrollArea, Stack, Text, Title } from "@mantine/core";
 import type { AppNotification, Change, StatusResult } from "../shared/ipc-contract";
 import { theme } from "./theme";
 import { RepoGroup, ChangeCard } from "./board";
@@ -8,6 +8,8 @@ import { Modal, type ModalSection } from "./modal";
 import { Sidebar, type Selection } from "./sidebar";
 import { DiffPanel } from "./diffPanel";
 import { SettingsPanel } from "./settings";
+import { PhaseRail, type Phase } from "./phaseRail";
+import { PlanView } from "./plan";
 import notificationSoundUrl from "./assets/msn-message.mp3";
 import logoUrl from "./assets/logo.png";
 
@@ -17,30 +19,6 @@ const keyOf = (c: Change) => `${c.repoPath}\u0000${c.change}`;
 
 // Mantine owns the colour scheme end to end; app.css keys its diff-renderer and
 // markdown colour variables off Mantine's [data-mantine-color-scheme] attribute.
-// The far-left workspace rail: switch between workspaces. Decorative for now —
-// the app scans a single configured root — but present to match the shell.
-function WorkspaceRail() {
-  const workspaces = [
-    { key: "os", label: "🛠️", title: "OpenSpec", active: true },
-    { key: "w", label: "W", title: "Wings" },
-    { key: "c", label: "C", title: "Cloud" },
-    { key: "d", label: "D", title: "Devices" },
-  ];
-  return (
-    <Box component="nav" className="ws-rail" aria-label="Workspaces">
-      <Stack gap="xs" align="center" className="ws-rail-list">
-        {workspaces.map((w) => (
-          <div key={w.key} className={`ws-avatar${w.active ? " active" : ""}`} title={w.title} aria-label={w.title}>
-            {w.label}
-          </div>
-        ))}
-        <UnstyledButton className="ws-avatar ws-avatar-add" title="Add workspace" aria-label="Add workspace">
-          +
-        </UnstyledButton>
-      </Stack>
-    </Box>
-  );
-}
 
 // specs/<capability>/spec.md → <capability>; used as the tab label when several
 // spec files are shown together. Falls back to the file name for other shapes.
@@ -88,6 +66,7 @@ export default function App() {
   const [unread, setUnread] = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activePhase, setActivePhase] = useState<Phase>("build");
   const [confirm, setConfirm] = useState<null | {
     title: string;
     detail?: string;
@@ -571,8 +550,12 @@ export default function App() {
         </Group>
       </Group>
       <div className="app-body">
-        <WorkspaceRail />
-        <div className="layout" ref={layoutRef}>
+        <PhaseRail active={activePhase} onSelect={setActivePhase} />
+        <div
+          className="layout"
+          ref={layoutRef}
+          style={{ display: activePhase === "build" ? "flex" : "none" }}
+        >
           <Sidebar
             groups={grouped}
             expanded={expanded}
@@ -597,6 +580,21 @@ export default function App() {
             {main}
           </main>
         </div>
+        <div
+          className="plan-host"
+          style={{
+            display: activePhase === "plan" ? "flex" : "none",
+            flex: activePhase === "plan" ? 1 : undefined,
+            minWidth: 0,
+          }}
+        >
+          <PlanView />
+        </div>
+        {activePhase === "release" && (
+          <Center data-testid="release-phase" p="xl" style={{ flex: 1 }}>
+            <Text c="dimmed">Release — coming soon.</Text>
+          </Center>
+        )}
       </div>
       <Modal open={modal.open} title={modal.title} sections={modal.sections} onOpenInEditor={modal.openInEditor} onClose={closeModal} />
       <MantineModal

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AppNotification, ChannelMap, ElectronAPI, EventChannelMap } from "../shared/ipc-contract";
 
-// Exactly nineteen named channels — no generic command passthrough. A sandboxed
+// Exactly twenty-five named channels — no generic command passthrough. A sandboxed
 // preload cannot import wiring.ts at runtime, so the channel strings are
 // declared here; typing the map as the shared ChannelMap asserts each method is
 // bound to its exact channel (a typo, missing key, or swap fails to compile).
@@ -25,6 +25,12 @@ const CHANNELS: ChannelMap = {
   installSchema: "board:installSchema",
   uninstallSchema: "board:uninstallSchema",
   openSchemaFile: "board:openSchemaFile",
+  startPlanSession: "board:startPlanSession",
+  sendPlanTurn: "board:sendPlanTurn",
+  openTicket: "board:openTicket",
+  readTicket: "board:readTicket",
+  planChooseFolder: "board:planChooseFolder",
+  newRefinement: "board:newRefinement",
 };
 
 // Main → renderer push channels, typed against the shared EventChannelMap for
@@ -32,6 +38,10 @@ const CHANNELS: ChannelMap = {
 const EVENTS: EventChannelMap = {
   notificationSound: "board:notificationSound",
   notification: "board:notification",
+  planTurn: "board:planTurn",
+  planStream: "board:planStream",
+  planBusy: "board:planBusy",
+  planSessionEnded: "board:planSessionEnded",
 };
 
 const api: ElectronAPI = {
@@ -64,6 +74,32 @@ const api: ElectronAPI = {
   installSchema: (name) => ipcRenderer.invoke(CHANNELS.installSchema, name),
   uninstallSchema: (name) => ipcRenderer.invoke(CHANNELS.uninstallSchema, name),
   openSchemaFile: (name, repoPath) => ipcRenderer.invoke(CHANNELS.openSchemaFile, name, repoPath),
+  startPlanSession: (payload) => ipcRenderer.invoke(CHANNELS.startPlanSession, payload),
+  sendPlanTurn: (text) => ipcRenderer.invoke(CHANNELS.sendPlanTurn, text),
+  openTicket: () => ipcRenderer.invoke(CHANNELS.openTicket),
+  readTicket: () => ipcRenderer.invoke(CHANNELS.readTicket),
+  planChooseFolder: () => ipcRenderer.invoke(CHANNELS.planChooseFolder),
+  newRefinement: () => ipcRenderer.invoke(CHANNELS.newRefinement),
+  onPlanTurn: (handler) => {
+    const listener = (_event: unknown, turn: Parameters<typeof handler>[0]) => handler(turn);
+    ipcRenderer.on(EVENTS.planTurn, listener);
+    return () => ipcRenderer.removeListener(EVENTS.planTurn, listener);
+  },
+  onPlanBusy: (handler) => {
+    const listener = (_event: unknown, busy: boolean) => handler(busy);
+    ipcRenderer.on(EVENTS.planBusy, listener);
+    return () => ipcRenderer.removeListener(EVENTS.planBusy, listener);
+  },
+  onPlanStream: (handler) => {
+    const listener = (_event: unknown, partial: Parameters<typeof handler>[0]) => handler(partial);
+    ipcRenderer.on(EVENTS.planStream, listener);
+    return () => ipcRenderer.removeListener(EVENTS.planStream, listener);
+  },
+  onPlanSessionEnded: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on(EVENTS.planSessionEnded, listener);
+    return () => ipcRenderer.removeListener(EVENTS.planSessionEnded, listener);
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

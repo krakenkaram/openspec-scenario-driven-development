@@ -828,7 +828,7 @@ async function fileDiffFullContext(repo: string, repoRoot: string, filePath: str
 // (deleted/untracked cases still reach git), so canonicalize the nearest existing
 // ancestor and re-append the missing tail. Returns null when the real target escapes
 // the repo's real root.
-function containedRealPath(repoRoot: string, filePath: string): string | null {
+export function containedRealPath(repoRoot: string, filePath: string): string | null {
   let root: string;
   try {
     root = fs.realpathSync(repoRoot);

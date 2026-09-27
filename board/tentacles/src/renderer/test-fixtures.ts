@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { Change, ElectronAPI, Phase, StatusResult } from "../shared/ipc-contract";
+import type { Change, ElectronAPI, Phase, PlanTurn, StatusResult } from "../shared/ipc-contract";
 
 export function phase(id: Phase["id"], over: Partial<Phase> = {}): Phase {
   return { id, applicable: true, done: false, files: [], fileExists: false, ...over };
@@ -72,6 +72,16 @@ export type MockApi = {
   installSchema: ReturnType<typeof vi.fn>;
   uninstallSchema: ReturnType<typeof vi.fn>;
   openSchemaFile: ReturnType<typeof vi.fn>;
+  startPlanSession: ReturnType<typeof vi.fn>;
+  sendPlanTurn: ReturnType<typeof vi.fn>;
+  openTicket: ReturnType<typeof vi.fn>;
+  readTicket: ReturnType<typeof vi.fn>;
+  planChooseFolder: ReturnType<typeof vi.fn>;
+  newRefinement: ReturnType<typeof vi.fn>;
+  onPlanTurn: ReturnType<typeof vi.fn>;
+  onPlanStream: ReturnType<typeof vi.fn>;
+  onPlanBusy: ReturnType<typeof vi.fn>;
+  onPlanSessionEnded: ReturnType<typeof vi.fn>;
 };
 
 export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
@@ -106,8 +116,92 @@ export function mockApi(over: Partial<ElectronAPI> = {}): MockApi {
     installSchema: vi.fn().mockResolvedValue({ ok: true }),
     uninstallSchema: vi.fn().mockResolvedValue({ ok: true }),
     openSchemaFile: vi.fn().mockResolvedValue({ ok: true }),
+    startPlanSession: vi.fn().mockResolvedValue({ ok: true }),
+    sendPlanTurn: vi.fn().mockResolvedValue({ ok: true }),
+    openTicket: vi.fn().mockResolvedValue({ ok: true }),
+    readTicket: vi.fn().mockResolvedValue({ ok: true, html: "<h1>Ticket</h1>" }),
+    planChooseFolder: vi.fn().mockResolvedValue({ path: null }),
+    newRefinement: vi.fn().mockResolvedValue({ ok: true }),
+    onPlanTurn: vi.fn().mockReturnValue(() => {}),
+    onPlanStream: vi.fn().mockReturnValue(() => {}),
+    onPlanBusy: vi.fn().mockReturnValue(() => {}),
+    onPlanSessionEnded: vi.fn().mockReturnValue(() => {}),
     ...over,
   } as unknown as MockApi;
   (window as unknown as { electronAPI: ElectronAPI }).electronAPI = api as unknown as ElectronAPI;
   return api;
+}
+
+// A scriptable fake for the planTurn push channel: pass `onPlanTurn` into
+// mockApi, then call `emit(turn)` to push a turn to whatever handler the app
+// registered. Mirrors the onNotificationSound capture pattern.
+export function planTurnChannel() {
+  let handler: ((turn: PlanTurn) => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanTurn = vi.fn((cb: (turn: PlanTurn) => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanTurn,
+    unsubscribe,
+    emit(turn: PlanTurn) {
+      handler?.(turn);
+    },
+  };
+}
+
+// A scriptable fake for the planSessionEnded push channel: pass `onPlanSessionEnded`
+// into mockApi, then call `end()` to fire the terminal signal at the app's handler.
+export function planSessionEndedChannel() {
+  let handler: (() => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanSessionEnded = vi.fn((cb: () => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanSessionEnded,
+    unsubscribe,
+    end() {
+      handler?.();
+    },
+  };
+}
+
+// A scriptable fake for the planBusy push channel: pass `onPlanBusy` into
+// mockApi, then call `set(busy)` to drive the thinking indicator / box lock.
+export function planBusyChannel() {
+  let handler: ((busy: boolean) => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanBusy = vi.fn((cb: (busy: boolean) => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanBusy,
+    unsubscribe,
+    set(busy: boolean) {
+      handler?.(busy);
+    },
+  };
+}
+
+// A scriptable fake for the planStream push channel: pass `onPlanStream` into
+// mockApi, then call `set(partial)` to drive the live word-by-word partial line
+// (or `set(null)` to clear it).
+export function planStreamChannel() {
+  let handler: ((partial: PlanTurn | null) => void) | undefined;
+  const unsubscribe = vi.fn();
+  const onPlanStream = vi.fn((cb: (partial: PlanTurn | null) => void) => {
+    handler = cb;
+    return unsubscribe;
+  });
+  return {
+    onPlanStream,
+    unsubscribe,
+    set(partial: PlanTurn | null) {
+      handler?.(partial);
+    },
+  };
 }

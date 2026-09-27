@@ -30,3 +30,12 @@ if (!window.ResizeObserver) {
     disconnect() {}
   } as unknown as typeof window.ResizeObserver;
 }
+
+// jsdom lacks document.fonts; Mantine's autosize Textarea subscribes to its
+// loadingdone event on mount. Provide a no-op FontFaceSet.
+if (!document.fonts) {
+  (document as unknown as { fonts: unknown }).fonts = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+}

@@ -1,4 +1,4 @@
-// Type-only IPC contract: the single source of truth for the board's nineteen
+// Type-only IPC contract: the single source of truth for the board's twenty-five
 // channels and their payload/result shapes. Everything here is a type, so it
 // erases at compile and adds no runtime coupling between the CJS main bundle
 // and the Vite renderer bundle.
@@ -242,6 +242,30 @@ export interface DoctorArgs {
 }
 export type DoctorResult = { checks: ResultRow[] };
 
+// PLAN phase — the refinement chat. One hosted agent (the `tentacles-refinement`
+// skill, run by the engine) drives the whole conversation in the picked folder;
+// the app relays its turns and never referees the flow. Each turn carries the
+// speaker it belongs to so the renderer paints three named amigos plus the user
+// from one agent stream; `system` is unattributed output and `error` is a
+// terminal failure turn.
+export type PlanSpeaker = "BA" | "Dev" | "QA" | "user" | "system" | "error";
+export interface PlanTurn {
+  speaker: PlanSpeaker;
+  text: string;
+}
+// The folder is NOT carried here: the renderer is untrusted (ADR-0002), so the
+// picked folder is authoritative main-process state set via planChooseFolder and
+// bound to start/open/wipe there. The renderer only supplies the idea.
+export interface StartPlanSessionArgs {
+  idea: string;
+}
+export type StartPlanSessionResult = { ok: true } | { ok: false; error: string };
+export type SendPlanTurnResult = { ok: true } | { ok: false; error: string };
+export type NewRefinementResult = { ok: true } | { ok: false; error: string };
+// The recorded folder's `.tentacles/TICKET.html` contents, for viewing the
+// ticket inside the app. Resolved and containment-guarded main-side.
+export type ReadTicketResult = { ok: true; html: string } | { ok: false; error: string };
+
 // Exact method → channel-name mapping: the single source of truth for the
 // boundary. Both the preload bridge and the main-process IPC registry are typed
 // against it, so a typo, a missing channel, OR a swap (mapping a method to a
@@ -266,6 +290,12 @@ export interface ChannelMap {
   installSchema: "board:installSchema";
   uninstallSchema: "board:uninstallSchema";
   openSchemaFile: "board:openSchemaFile";
+  startPlanSession: "board:startPlanSession";
+  sendPlanTurn: "board:sendPlanTurn";
+  openTicket: "board:openTicket";
+  readTicket: "board:readTicket";
+  planChooseFolder: "board:planChooseFolder";
+  newRefinement: "board:newRefinement";
 }
 
 export type Channel = ChannelMap[keyof ChannelMap];
@@ -287,6 +317,21 @@ export interface AppNotification {
 export interface EventChannelMap {
   notificationSound: "board:notificationSound";
   notification: "board:notification";
+  // A PLAN agent turn pushed to the renderer as the hosted agent produces it.
+  planTurn: "board:planTurn";
+  // The in-progress partial line as tokens stream in (word by word), or null when
+  // there is no partial. Lets the renderer show text growing live before it
+  // commits as a `planTurn`.
+  planStream: "board:planStream";
+  // Pushed true when an amigo turn starts generating and false when it finishes,
+  // so the renderer shows a thinking indicator and locks the reply box while the
+  // agent is replying. Between turns the session is idle (false) but still live.
+  planBusy: "board:planBusy";
+  // Fired once when the hosted agent's session ends (a hard failure — non-zero
+  // exit or spawn error — or an explicit stop). The renderer disables the reply
+  // control on this signal so a dead session can no longer be typed into. The
+  // terminal error text, when any, arrives first as an `error` PlanTurn.
+  planSessionEnded: "board:planSessionEnded";
 }
 
 export type EventChannel = EventChannelMap[keyof EventChannelMap];
@@ -332,4 +377,37 @@ export interface ElectronAPI {
   // addressed by schema NAME plus the change's repo so the main process resolves
   // the folder itself and reveals the file (see core.openSchemaFile).
   openSchemaFile(name: string, repoPath: string): Promise<OpenPathResult>;
+  // PLAN: choose the project folder through the native picker. The main process
+  // records the canonical chosen path as authoritative session state; the
+  // returned path is for display only. start/open/wipe all bind to the recorded
+  // folder, never to a renderer-supplied path (ADR-0002).
+  planChooseFolder(): Promise<ChooseDirectoryResult>;
+  // PLAN: start a refinement session for the recorded folder and this idea. The
+  // main process starts the hosted agent (the tentacles-refinement skill,
+  // bootstrapping docs via tentacles-documentation first when absent) in that
+  // folder; its turns arrive via onPlanTurn.
+  startPlanSession(payload: StartPlanSessionArgs): Promise<StartPlanSessionResult>;
+  // Relay a user turn to the running agent.
+  sendPlanTurn(text: string): Promise<SendPlanTurnResult>;
+  // Open the recorded folder's `.tentacles/TICKET.html` in the OS-default app.
+  // Resolved and containment-guarded main-side; the renderer supplies no path.
+  openTicket(): Promise<OpenPathResult>;
+  // Read the recorded folder's `.tentacles/TICKET.html` contents for in-app
+  // viewing. Resolved and containment-guarded main-side; the renderer supplies
+  // no path.
+  readTicket(): Promise<ReadTicketResult>;
+  // New refinement: stop the session and delete only the recorded folder's
+  // `.tentacles/TICKET.html`, keeping the `.md` docs. Takes no path — it acts on
+  // the recorded folder.
+  newRefinement(): Promise<NewRefinementResult>;
+  // Subscribe to agent turns pushed from main; returns an unsubscribe function.
+  onPlanTurn(handler: (turn: PlanTurn) => void): () => void;
+  // Subscribe to the live partial line (word-by-word streaming), or null when
+  // there is no partial; returns an unsubscribe function.
+  onPlanStream(handler: (partial: PlanTurn | null) => void): () => void;
+  // Subscribe to the busy signal (true while an amigo turn is generating, false
+  // when idle); returns an unsubscribe function.
+  onPlanBusy(handler: (busy: boolean) => void): () => void;
+  // Subscribe to the terminal session-ended signal; returns an unsubscribe fn.
+  onPlanSessionEnded(handler: () => void): () => void;
 }
